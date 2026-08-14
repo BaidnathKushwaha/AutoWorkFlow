@@ -1,0 +1,312 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+const defaultWorkflows = [
+  {
+    id: 'wf-001',
+    name: 'GitHub PR Smart Reviewer',
+    status: 'active',
+    trigger: 'GitHub Event',
+    lastRun: '2 min ago',
+    executions: 142,
+    nodeCount: 6,
+    description: 'Auto-reviews pull requests using AI and posts detailed comments.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',      position: { x: 250, y: 60  }, data: { label: 'GitHub PR Opened',  description: 'Fires when a new pull request is opened' } },
+      { id: 'n2', type: 'ai',           position: { x: 250, y: 200 }, data: { label: 'Fetch PR Diff',     description: 'Downloads the diff via GitHub API' } },
+      { id: 'n3', type: 'ai',           position: { x: 250, y: 340 }, data: { label: 'GPT-4 Reviewer',   description: 'Analyses code quality and security issues' } },
+      { id: 'n4', type: 'logic',        position: { x: 250, y: 480 }, data: { label: 'Score Filter',      description: 'Skips comment if score > 8' } },
+      { id: 'n5', type: 'integration',  position: { x: 250, y: 620 }, data: { label: 'Post PR Comment',   description: 'Posts review comment to the PR' } },
+      { id: 'n6', type: 'integration',  position: { x: 550, y: 480 }, data: { label: 'Slack Notify',      description: 'Alerts team on Slack' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+      { id: 'e4-6', source: 'n4', target: 'n6', animated: true },
+    ],
+  },
+  {
+    id: 'wf-002',
+    name: 'AI Email Router',
+    status: 'active',
+    trigger: 'Email Received',
+    lastRun: '15 min ago',
+    executions: 890,
+    nodeCount: 5,
+    description: 'Classifies incoming emails and routes them to appropriate channels.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 60  }, data: { label: 'Email Received',   description: 'Triggers on new inbound email' } },
+      { id: 'n2', type: 'ai',          position: { x: 250, y: 200 }, data: { label: 'Classify Intent',  description: 'GPT classifies topic and urgency' } },
+      { id: 'n3', type: 'logic',       position: { x: 250, y: 340 }, data: { label: 'Route Decision',   description: 'Routes to correct channel' } },
+      { id: 'n4', type: 'integration', position: { x: 100, y: 480 }, data: { label: 'Sales Inbox',      description: 'Forward to sales team' } },
+      { id: 'n5', type: 'integration', position: { x: 400, y: 480 }, data: { label: 'Support Desk',     description: 'Forward to support desk' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e3-5', source: 'n3', target: 'n5', animated: true },
+    ],
+  },
+  {
+    id: 'wf-003',
+    name: 'Resume JD Matcher',
+    status: 'active',
+    trigger: 'HTTP Webhook',
+    lastRun: '1 hr ago',
+    executions: 312,
+    nodeCount: 7,
+    description: 'Scores resumes against job descriptions and sends results via Slack.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 40  }, data: { label: 'Webhook Received', description: 'Resume upload webhook' } },
+      { id: 'n2', type: 'ai',          position: { x: 250, y: 160 }, data: { label: 'Parse Resume',     description: 'Extract skills & experience' } },
+      { id: 'n3', type: 'ai',          position: { x: 250, y: 280 }, data: { label: 'Parse JD',         description: 'Extract requirements from JD' } },
+      { id: 'n4', type: 'ai',          position: { x: 250, y: 400 }, data: { label: 'Score Match',      description: 'Vector similarity score' } },
+      { id: 'n5', type: 'logic',       position: { x: 250, y: 520 }, data: { label: 'Threshold Check',  description: 'Pass if score > 70%' } },
+      { id: 'n6', type: 'integration', position: { x: 100, y: 640 }, data: { label: 'Slack Notify',     description: 'Alert recruiter on Slack' } },
+      { id: 'n7', type: 'integration', position: { x: 400, y: 640 }, data: { label: 'Update CRM',       description: 'Log score in Greenhouse' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+      { id: 'e5-6', source: 'n5', target: 'n6', animated: true },
+      { id: 'e5-7', source: 'n5', target: 'n7', animated: true },
+    ],
+  },
+  {
+    id: 'wf-004',
+    name: 'Trend Content Generator',
+    status: 'draft',
+    trigger: 'Cron (Daily)',
+    lastRun: 'Never',
+    executions: 0,
+    nodeCount: 4,
+    description: 'Fetches trending topics and generates social media content.',
+    canvasNodes: [],
+    canvasEdges: [],
+  },
+  {
+    id: 'wf-005',
+    name: 'Slack Incident Alert',
+    status: 'active',
+    trigger: 'API Monitor',
+    lastRun: '5 min ago',
+    executions: 67,
+    nodeCount: 3,
+    description: 'Monitors API health and alerts the team on Slack when issues arise.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 80  }, data: { label: 'API Health Check', description: 'Monitors endpoint latency' } },
+      { id: 'n2', type: 'logic',       position: { x: 250, y: 240 }, data: { label: 'Threshold Alert',  description: 'Fires if p95 > 500ms' } },
+      { id: 'n3', type: 'integration', position: { x: 250, y: 400 }, data: { label: 'Slack Alert',      description: 'Posts incident to #incidents' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+    ],
+  },
+  {
+    id: 'wf-006',
+    name: 'Customer Feedback Analyzer',
+    status: 'active',
+    trigger: 'Cron (Hourly)',
+    lastRun: '30 min ago',
+    executions: 504,
+    nodeCount: 5,
+    description: 'Pulls customer feedback from Intercom, runs sentiment analysis, and posts a summary to Notion.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 60  }, data: { label: 'Hourly Cron',       description: 'Fires every hour' } },
+      { id: 'n2', type: 'integration', position: { x: 250, y: 200 }, data: { label: 'Fetch Intercom',    description: 'Pull last-hour conversations' } },
+      { id: 'n3', type: 'ai',          position: { x: 250, y: 340 }, data: { label: 'Sentiment Analysis',description: 'GPT scores each message' } },
+      { id: 'n4', type: 'ai',          position: { x: 250, y: 480 }, data: { label: 'Summarise',         description: 'Generate bullet summary' } },
+      { id: 'n5', type: 'integration', position: { x: 250, y: 620 }, data: { label: 'Update Notion',     description: 'Append summary to Notion DB' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+    ],
+  },
+  {
+    id: 'wf-007',
+    name: 'Invoice Data Extractor',
+    status: 'active',
+    trigger: 'Email Received',
+    lastRun: '3 hr ago',
+    executions: 228,
+    nodeCount: 6,
+    description: 'Parses invoice PDFs from email attachments and pushes line items to Google Sheets.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 60  }, data: { label: 'Email with PDF',   description: 'Triggers on attachment email' } },
+      { id: 'n2', type: 'integration', position: { x: 250, y: 200 }, data: { label: 'Download PDF',     description: 'Extract attachment bytes' } },
+      { id: 'n3', type: 'ai',          position: { x: 250, y: 340 }, data: { label: 'OCR & Parse',      description: 'Extract line items from PDF' } },
+      { id: 'n4', type: 'logic',       position: { x: 250, y: 480 }, data: { label: 'Validate Data',    description: 'Check required fields present' } },
+      { id: 'n5', type: 'integration', position: { x: 100, y: 620 }, data: { label: 'Google Sheets',    description: 'Append rows to sheet' } },
+      { id: 'n6', type: 'integration', position: { x: 400, y: 620 }, data: { label: 'Email Confirm',    description: 'Send confirmation to sender' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+      { id: 'e4-6', source: 'n4', target: 'n6', animated: true },
+    ],
+  },
+  {
+    id: 'wf-008',
+    name: 'Sales Lead Enricher',
+    status: 'active',
+    trigger: 'HTTP Webhook',
+    lastRun: 'Yesterday',
+    executions: 1340,
+    nodeCount: 8,
+    description: 'Enriches new CRM leads with LinkedIn data and company info, then assigns to a rep.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 300, y: 40  }, data: { label: 'New CRM Lead',     description: 'Webhook from HubSpot' } },
+      { id: 'n2', type: 'integration', position: { x: 300, y: 160 }, data: { label: 'LinkedIn Fetch',   description: 'Lookup person & company' } },
+      { id: 'n3', type: 'integration', position: { x: 300, y: 280 }, data: { label: 'Clearbit Enrich',  description: 'Append firmographic data' } },
+      { id: 'n4', type: 'ai',          position: { x: 300, y: 400 }, data: { label: 'Score Lead',       description: 'AI lead scoring 0-100' } },
+      { id: 'n5', type: 'logic',       position: { x: 300, y: 520 }, data: { label: 'Tier Router',      description: 'Route by score tier' } },
+      { id: 'n6', type: 'integration', position: { x: 100, y: 640 }, data: { label: 'Assign Enterprise',description: 'Route to Enterprise AE' } },
+      { id: 'n7', type: 'integration', position: { x: 300, y: 640 }, data: { label: 'Assign Mid-Market',description: 'Route to Mid-Market AE' } },
+      { id: 'n8', type: 'integration', position: { x: 500, y: 640 }, data: { label: 'Assign SMB',       description: 'Route to SMB team' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+      { id: 'e5-6', source: 'n5', target: 'n6', animated: true },
+      { id: 'e5-7', source: 'n5', target: 'n7', animated: true },
+      { id: 'e5-8', source: 'n5', target: 'n8', animated: true },
+    ],
+  },
+  {
+    id: 'wf-009',
+    name: 'Nightly DB Backup Notifier',
+    status: 'active',
+    trigger: 'Cron (Daily)',
+    lastRun: '8 hr ago',
+    executions: 182,
+    nodeCount: 3,
+    description: 'Runs nightly, verifies the backup completed, and posts a status report to Slack.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 80  }, data: { label: 'Nightly Cron',     description: 'Runs at 02:00 UTC' } },
+      { id: 'n2', type: 'logic',       position: { x: 250, y: 240 }, data: { label: 'Verify Backup',    description: 'Check S3 bucket for today\'s dump' } },
+      { id: 'n3', type: 'integration', position: { x: 250, y: 400 }, data: { label: 'Slack Report',     description: 'Post ✅ / ❌ to #ops channel' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+    ],
+  },
+  {
+    id: 'wf-010',
+    name: 'Social Media Scheduler',
+    status: 'draft',
+    trigger: 'Manual',
+    lastRun: '3 days ago',
+    executions: 14,
+    nodeCount: 4,
+    description: 'Queues and publishes social media posts to Twitter and LinkedIn on a schedule.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 80  }, data: { label: 'Manual Trigger',   description: 'Start on demand' } },
+      { id: 'n2', type: 'ai',          position: { x: 250, y: 240 }, data: { label: 'Generate Copy',    description: 'Create post from topic brief' } },
+      { id: 'n3', type: 'integration', position: { x: 100, y: 400 }, data: { label: 'Post to Twitter',  description: 'Schedule tweet' } },
+      { id: 'n4', type: 'integration', position: { x: 400, y: 400 }, data: { label: 'Post to LinkedIn', description: 'Schedule LinkedIn post' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e2-4', source: 'n2', target: 'n4', animated: true },
+    ],
+  },
+  {
+    id: 'wf-011',
+    name: 'Bug Report Triager',
+    status: 'active',
+    trigger: 'GitHub Event',
+    lastRun: '45 min ago',
+    executions: 396,
+    nodeCount: 5,
+    description: 'Classifies new GitHub issues by severity using AI and assigns them to the right team.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 250, y: 60  }, data: { label: 'Issue Opened',     description: 'New GitHub issue created' } },
+      { id: 'n2', type: 'ai',          position: { x: 250, y: 200 }, data: { label: 'Classify Issue',   description: 'Detect bug vs feature vs question' } },
+      { id: 'n3', type: 'ai',          position: { x: 250, y: 340 }, data: { label: 'Severity Score',   description: 'P0/P1/P2/P3 scoring' } },
+      { id: 'n4', type: 'logic',       position: { x: 250, y: 480 }, data: { label: 'Priority Router',  description: 'Route by priority level' } },
+      { id: 'n5', type: 'integration', position: { x: 250, y: 620 }, data: { label: 'Assign & Label',   description: 'Set assignee and labels on GitHub' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+    ],
+  },
+  {
+    id: 'wf-012',
+    name: 'Weekly Report Generator',
+    status: 'active',
+    trigger: 'Cron (Weekly)',
+    lastRun: '5 days ago',
+    executions: 28,
+    nodeCount: 7,
+    description: 'Aggregates metrics from analytics tools and emails a formatted weekly report to stakeholders.',
+    canvasNodes: [
+      { id: 'n1', type: 'trigger',     position: { x: 300, y: 40  }, data: { label: 'Weekly Cron',      description: 'Runs every Monday 08:00' } },
+      { id: 'n2', type: 'integration', position: { x: 300, y: 160 }, data: { label: 'Fetch GA4',        description: 'Pull weekly traffic metrics' } },
+      { id: 'n3', type: 'integration', position: { x: 300, y: 280 }, data: { label: 'Fetch Stripe',     description: 'Pull weekly revenue data' } },
+      { id: 'n4', type: 'integration', position: { x: 300, y: 400 }, data: { label: 'Fetch Linear',     description: 'Pull sprint velocity data' } },
+      { id: 'n5', type: 'ai',          position: { x: 300, y: 520 }, data: { label: 'Write Report',     description: 'GPT formats a markdown report' } },
+      { id: 'n6', type: 'integration', position: { x: 100, y: 640 }, data: { label: 'Email Digest',     description: 'Send report to stakeholders' } },
+      { id: 'n7', type: 'integration', position: { x: 500, y: 640 }, data: { label: 'Save to Notion',   description: 'Archive in Notion weekly log' } },
+    ],
+    canvasEdges: [
+      { id: 'e1-2', source: 'n1', target: 'n2', animated: true },
+      { id: 'e2-3', source: 'n2', target: 'n3', animated: true },
+      { id: 'e3-4', source: 'n3', target: 'n4', animated: true },
+      { id: 'e4-5', source: 'n4', target: 'n5', animated: true },
+      { id: 'e5-6', source: 'n5', target: 'n6', animated: true },
+      { id: 'e5-7', source: 'n5', target: 'n7', animated: true },
+    ],
+  },
+]
+
+export const useWorkflowStore = create(
+  persist(
+    (set) => ({
+      workflows: defaultWorkflows,
+      activeWorkflowId: null,
+
+      setWorkflows: (workflowsOrUpdater) => set((s) => ({
+        workflows: typeof workflowsOrUpdater === 'function'
+          ? workflowsOrUpdater(s.workflows)
+          : workflowsOrUpdater,
+      })),
+      addWorkflow: (workflow) =>
+        set((s) => ({ workflows: [workflow, ...s.workflows] })),
+      updateWorkflow: (id, data) =>
+        set((s) => ({
+          workflows: s.workflows.map((w) => (w.id === id ? { ...w, ...data } : w)),
+        })),
+      deleteWorkflow: (id) =>
+        set((s) => ({ workflows: s.workflows.filter((w) => w.id !== id) })),
+
+      // Save the canvas snapshot back into the workflow record
+      saveWorkflowCanvas: (id, canvasNodes, canvasEdges) =>
+        set((s) => ({
+          workflows: s.workflows.map((w) =>
+            w.id === id ? { ...w, canvasNodes, canvasEdges } : w
+          ),
+        })),
+
+      setActiveWorkflow: (id) => set({ activeWorkflowId: id }),
+    }),
+    { name: 'autoworkflow-workflows' }
+  )
+)

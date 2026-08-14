@@ -1,0 +1,56 @@
+{
+  "info": { "name": "AutoWorkflow API", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "accessToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        { "name": "Signup", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}],
+          "url": "{{baseUrl}}/api/auth/signup",
+          "body": { "mode": "raw", "raw": "{\"name\":\"Demo User\",\"email\":\"demo@autoworkflow.com\",\"password\":\"password123\"}" } } },
+        { "name": "Login", "request": { "method": "POST", "header": [{"key":"Content-Type","value":"application/json"}],
+          "url": "{{baseUrl}}/api/auth/login",
+          "body": { "mode": "raw", "raw": "{\"email\":\"demo@autoworkflow.com\",\"password\":\"password123\"}" } } }
+      ]
+    },
+    {
+      "name": "Workflows",
+      "item": [
+        { "name": "List Workflows", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{accessToken}}"}],
+          "url": "{{baseUrl}}/api/workflows" } },
+        { "name": "Create Workflow", "request": { "method": "POST",
+          "header": [{"key":"Content-Type","value":"application/json"},{"key":"Authorization","value":"Bearer {{accessToken}}"}],
+          "url": "{{baseUrl}}/api/workflows",
+          "body": { "mode": "raw", "raw": "{\"name\":\"My Workflow\",\"description\":\"Test\"}" } } },
+        { "name": "Trigger Workflow", "request": { "method": "POST", "header": [{"key":"Authorization","value":"Bearer {{accessToken}}"}],
+          "url": "{{baseUrl}}/api/workflows/{{workflowId}}/trigger" } }
+      ]
+    },
+    {
+      "name": "Executions",
+      "item": [
+        { "name": "List Executions", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{accessToken}}"}],
+          "url": "{{baseUrl}}/api/executions" } }
+      ]
+    },
+    {
+      "name": "Integrations",
+      "item": [
+        { "name": "List Integrations", "request": { "method": "GET", "header": [{"key":"Authorization","value":"Bearer {{accessToken}}"}],
+          "url": "{{baseUrl}}/api/integrations" } }
+      ]
+    },
+    {
+      "name": "Assistant",
+      "item": [
+        { "name": "Chat", "request": { "method": "POST",
+          "header": [{"key":"Content-Type","value":"application/json"},{"key":"Authorization","value":"Bearer {{accessToken}}"}],
+          "url": "{{baseUrl}}/api/assistant/chat",
+          "body": { "mode": "raw", "raw": "{\"message\":\"Create a workflow that reads my Gmail and posts summaries to Slack\"}" } } }
+      ]
+    }
+  ]
+}

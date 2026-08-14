@@ -1,0 +1,62 @@
+# ==========================================
+# SECRETS / ENVIRONMENT VARIABLES
+# ==========================================
+
+.env
+.env.*
+*.env
+
+# ==========================================
+# SPRING BOOT CONFIGURATION
+# Ignore all real environment-specific configs
+# ==========================================
+
+**/application.yml
+**/application.yaml
+**/application-dev.yml
+**/application-dev.yaml
+**/application-prod.yml
+**/application-prod.yaml
+
+# Ignore any other profile-specific configs
+**/application-*.yml
+**/application-*.yaml
+
+# ==========================================
+# JAVA / MAVEN
+# ==========================================
+
+**/target/
+*.class
+
+# ==========================================
+# IDE
+# ==========================================
+
+.idea/
+*.iml
+*.iws
+*.ipr
+
+.vscode/
+
+# ==========================================
+# NODE / REACT
+# ==========================================
+
+**/node_modules/
+**/dist/
+**/build/
+
+# ==========================================
+# LOGS
+# ==========================================
+
+*.log
+
+# ==========================================
+# OS
+# ==========================================
+
+.DS_Store
+Thumbs.db

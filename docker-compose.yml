@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: autoworkflow-postgres
+    environment:
+      - POSTGRES_DB=autoworkflow
+      - POSTGRES_USER=autoworkflow
+      - POSTGRES_PASSWORD=baidnath
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "autoworkflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
