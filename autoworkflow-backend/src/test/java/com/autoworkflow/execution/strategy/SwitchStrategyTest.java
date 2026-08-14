@@ -99,4 +99,36 @@ class SwitchStrategyTest {
         assertThat(result.success()).isFalse();
         assertThat(result.error()).contains("cases");
     }
+
+    @Test
+    void casesConfigured_butAllBlank_failsWithClearMessage_notMisleadingNoMatchMessage() throws Exception {
+        // Phase 3 hardening: previously an array of whitespace-only strings passed the
+        // "isEmpty()" structural check and fell all the way through to a confusing
+        // "did not match any configured case" error. Now caught explicitly.
+        ObjectNode cfg = JsonUtils.mapper().createObjectNode();
+        cfg.put("field", "match");
+        cfg.putArray("cases").add("  ").add("").add("   ");
+        JsonNode input = JsonUtils.mapper().readTree("{\"match\":\"Strong\"}");
+
+        NodeExecutionResult result = strategy.execute(ctx(cfg, input));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.error()).contains("no valid cases configured");
+    }
+
+    @Test
+    void duplicateCasesInConfig_matchSafely_returnsSingleBranchKey() throws Exception {
+        // Defense in depth: the frontend prevents committing duplicate cases, but a
+        // workflow could still be hand-edited via the API. The backend must not error
+        // or behave ambiguously if that happens.
+        ObjectNode cfg = JsonUtils.mapper().createObjectNode();
+        cfg.put("field", "match");
+        cfg.putArray("cases").add("Strong").add("Strong").add("Weak");
+        JsonNode input = JsonUtils.mapper().readTree("{\"match\":\"Strong\"}");
+
+        NodeExecutionResult result = strategy.execute(ctx(cfg, input));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.branchKey()).isEqualTo("Strong");
+    }
 }

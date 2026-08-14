@@ -415,4 +415,101 @@ class WorkflowExecutorTest {
         assertThat(executedNodeIds).contains("Trigger", "Switch", "StrongNode");
         assertThat(executedNodeIds).doesNotContain("ModerateNode", "WeakNode");
     }
+
+    // --- Phase 3: end-to-end verification of the exact reviewed pipeline ---
+    // Webhook -> Classifier(-like) -> Switch -> {Strong, Moderate}=GoogleSheets, Weak=Gmail
+
+    /** Delegates to the real production SwitchStrategy — this is an end-to-end test, not a fake-branch test. */
+    private static class SwitchStrategyStandin implements NodeStrategy {
+        private final com.autoworkflow.execution.strategy.SwitchStrategy real = new com.autoworkflow.execution.strategy.SwitchStrategy();
+        @Override public String getTypeKey() { return "switch"; }
+        @Override public NodeExecutionResult execute(NodeExecutionContext ctx) { return real.execute(ctx); }
+    }
+
+    private WorkflowExecutor.ExecutionRunResult runFullPipeline(String classifierForcedLabel) {
+        // Mimics ClassifierStrategy's real output shape: {input, label, ...} — Switch's
+        // `field: "label"` reads exactly this, proving Switch receives and correctly
+        // reads the upstream node's actual output (checks 1 and 2), not the raw trigger payload.
+        NodeStrategy fakeClassifier = new NodeStrategy() {
+            @Override public String getTypeKey() { return "classifier"; }
+            @Override public NodeExecutionResult execute(NodeExecutionContext ctx) {
+                ObjectNode out = JsonUtils.mapper().createObjectNode();
+                out.set("input", ctx.getInputPayload());
+                out.put("label", classifierForcedLabel);
+                return NodeExecutionResult.ok(out);
+            }
+        };
+
+        ArrayNode nodes = JsonUtils.mapper().createArrayNode();
+        nodes.add(node("Webhook", "webhook"));
+        nodes.add(node("Classifier", "classifier"));
+        ObjectNode switchNode = node("Switch", "switch");
+        ObjectNode switchData = switchNode.putObject("data");
+        switchData.put("field", "label");
+        switchData.putArray("cases").add("Strong").add("Moderate").add("Weak");
+        switchData.put("defaultCase", "Weak");
+        nodes.add(switchNode);
+        nodes.add(node("SheetsStrong", "google_sheets"));
+        nodes.add(node("SheetsModerate", "google_sheets"));
+        nodes.add(node("Gmail", "gmail"));
+
+        ArrayNode edges = JsonUtils.mapper().createArrayNode();
+        edges.add(edge("Webhook", "Classifier", null));
+        edges.add(edge("Classifier", "Switch", null));
+        edges.add(edge("Switch", "SheetsStrong", "Strong"));
+        edges.add(edge("Switch", "SheetsModerate", "Moderate"));
+        edges.add(edge("Switch", "Gmail", "Weak"));
+
+        WorkflowExecutor executor = new WorkflowExecutor(new NodeStrategyRegistry(
+                List.of(triggerStrategy("webhook"), fakeClassifier, new SwitchStrategyStandin(),
+                        echoStrategy("google_sheets"), echoStrategy("gmail"))));
+
+        return executor.run(USER_ID, WORKFLOW_ID, EXECUTION_ID, nodes, edges,
+                JsonUtils.mapper().createObjectNode().put("raw", "webhook payload"));
+    }
+
+    @Test
+    void endToEnd_strongClassification_routesOnlyToStrongBranch() {
+        WorkflowExecutor.ExecutionRunResult result = runFullPipeline("Strong");
+
+        assertThat(result.success()).isTrue();
+        List<String> executed = result.steps().stream().map(LogStep::getNodeId).toList();
+        assertThat(executed).containsExactly("Webhook", "Classifier", "Switch", "SheetsStrong");
+        assertThat(executed).doesNotContain("SheetsModerate", "Gmail");
+
+        // Switch received the Classifier's actual output (check 1) and its own output is
+        // still the passthrough input (per SwitchStrategy's documented contract).
+        LogStep switchStep = result.steps().stream().filter(s -> s.getNodeId().equals("Switch")).findFirst().orElseThrow();
+        assertThat(switchStep.getInputPayload().get("label").asText()).isEqualTo("Strong");
+    }
+
+    @Test
+    void endToEnd_moderateClassification_routesOnlyToModerateBranch() {
+        WorkflowExecutor.ExecutionRunResult result = runFullPipeline("Moderate");
+
+        List<String> executed = result.steps().stream().map(LogStep::getNodeId).toList();
+        assertThat(executed).containsExactly("Webhook", "Classifier", "Switch", "SheetsModerate");
+        assertThat(executed).doesNotContain("SheetsStrong", "Gmail");
+    }
+
+    @Test
+    void endToEnd_weakClassification_routesOnlyToWeakBranch() {
+        WorkflowExecutor.ExecutionRunResult result = runFullPipeline("Weak");
+
+        List<String> executed = result.steps().stream().map(LogStep::getNodeId).toList();
+        assertThat(executed).containsExactly("Webhook", "Classifier", "Switch", "Gmail");
+        assertThat(executed).doesNotContain("SheetsStrong", "SheetsModerate");
+    }
+
+    @Test
+    void endToEnd_unknownClassification_usesDefaultCase() {
+        // Classifier returns something not in Switch's case list at all -> Switch's
+        // defaultCase ("Weak") is used -> routes to Gmail, same as an explicit "Weak".
+        WorkflowExecutor.ExecutionRunResult result = runFullPipeline("SomethingUnrecognized");
+
+        assertThat(result.success()).isTrue();
+        List<String> executed = result.steps().stream().map(LogStep::getNodeId).toList();
+        assertThat(executed).containsExactly("Webhook", "Classifier", "Switch", "Gmail");
+        assertThat(executed).doesNotContain("SheetsStrong", "SheetsModerate");
+    }
 }

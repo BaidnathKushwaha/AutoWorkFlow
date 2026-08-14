@@ -30,8 +30,15 @@ public class SwitchStrategy implements NodeStrategy {
         }
 
         JsonNode casesNode = config.path("cases");
-        if (!casesNode.isArray() || casesNode.isEmpty()) {
-            return NodeExecutionResult.failed("Switch node is missing required config field 'cases' (must be a non-empty array).");
+        java.util.List<String> cases = new java.util.ArrayList<>();
+        if (casesNode.isArray()) {
+            for (JsonNode c : casesNode) {
+                String v = c.asText("").trim();
+                if (!v.isEmpty() && !cases.contains(v)) cases.add(v);
+            }
+        }
+        if (cases.isEmpty()) {
+            return NodeExecutionResult.failed("Switch node has no valid cases configured (config field 'cases' must contain at least one non-empty value).");
         }
 
         String defaultCase = config.path("defaultCase").asText(null);
@@ -47,8 +54,8 @@ public class SwitchStrategy implements NodeStrategy {
         }
 
         String actual = actualNode.asText();
-        for (JsonNode caseNode : casesNode) {
-            if (caseNode.asText().equals(actual)) {
+        for (String caseValue : cases) {
+            if (caseValue.equals(actual)) {
                 return NodeExecutionResult.okWithBranchKey(input, actual);
             }
         }
