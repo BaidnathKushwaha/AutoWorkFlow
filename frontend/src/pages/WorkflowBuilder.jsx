@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { useWorkflowStore } from '../store/workflowStore'
 import { useExecutionStore } from '../store/executionStore'
 import { useNotificationStore } from '../store/notificationStore'
@@ -75,28 +75,191 @@ const NODE_PROVIDERS = {
     classifier: 'openai',
 }
 
+function convertAiProposalToCanvas(proposal) {
+    if (!proposal || typeof proposal !== 'object') {
+        return {
+            valid: true,
+            nodes: [],
+            edges: [],
+            error: null,
+        }
+    }
+
+    if (!Array.isArray(proposal.nodes)) {
+        return {
+            valid: false,
+            nodes: [],
+            edges: [],
+            error: 'AI workflow proposal contains an invalid nodes collection.',
+        }
+    }
+
+    if (!Array.isArray(proposal.edges)) {
+        return {
+            valid: false,
+            nodes: [],
+            edges: [],
+            error: 'AI workflow proposal contains an invalid edges collection.',
+        }
+    }
+
+    const invalidNode = proposal.nodes.find((node) => (
+        !node ||
+        typeof node !== 'object' ||
+        typeof node.id !== 'string' ||
+        node.id.trim() === '' ||
+        typeof node.type !== 'string' ||
+        node.type.trim() === '' ||
+        !nodeTypes[node.type]
+    ))
+
+    if (invalidNode) {
+        return {
+            valid: false,
+            nodes: [],
+            edges: [],
+            error:
+                'AI workflow proposal contains a node with a missing or unsupported ID/type.',
+        }
+    }
+
+    const invalidEdge = proposal.edges.find((edge) => (
+        !edge ||
+        typeof edge !== 'object' ||
+        typeof edge.id !== 'string' ||
+        edge.id.trim() === '' ||
+        typeof edge.source !== 'string' ||
+        edge.source.trim() === '' ||
+        typeof edge.target !== 'string' ||
+        edge.target.trim() === ''
+    ))
+
+    if (invalidEdge) {
+        return {
+            valid: false,
+            nodes: [],
+            edges: [],
+            error:
+                'AI workflow proposal contains an edge with missing ID, source, or target.',
+        }
+    }
+
+    const nodes = proposal.nodes.map((node, index) => ({
+        id: node.id,
+        type: node.type,
+        position: {
+            x: 120 + (index % 4) * 300,
+            y: 100 + Math.floor(index / 4) * 180,
+        },
+        data: {
+            ...(node.configuration &&
+            typeof node.configuration === 'object'
+                ? node.configuration
+                : {}),
+            label:
+                node.configuration?.label ||
+                node.type ||
+                node.id,
+            description:
+                node.configuration?.description ||
+                `AI proposed ${node.type} node`,
+        },
+    }))
+
+    const edges = proposal.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        ...(edge.configuration &&
+        typeof edge.configuration === 'object'
+            ? { data: edge.configuration }
+            : {}),
+    }))
+
+    return {
+        valid: true,
+        nodes,
+        edges,
+        error: null,
+    }
+}
+
 function WorkflowBuilderInner() {
     const { id } = useParams()
+    const location = useLocation()
     const [searchParams] = useSearchParams()
     const navigate = useNavigate()
     const reactFlowWrapper = useRef(null)
-    const { workflows, addWorkflow, updateWorkflow, saveWorkflowCanvas } = useWorkflowStore()
+
+    const { workflows, addWorkflow, updateWorkflow, saveWorkflowCanvas } =
+        useWorkflowStore()
+
+    const aiWorkflowProposal =
+        id === 'new'
+            ? location.state?.aiWorkflowProposal || null
+            : null
+
+    const aiProposalCanvas =
+        convertAiProposalToCanvas(aiWorkflowProposal)
+
+    useEffect(() => {
+        if (!aiWorkflowProposal) {
+            return
+        }
+
+        if (!aiProposalCanvas.valid) {
+            toast.error('Invalid AI workflow proposal', {
+                description:
+                    aiProposalCanvas.error ||
+                    'The workflow proposal could not be loaded safely.',
+            })
+
+            navigate('/builder/new', {
+                replace: true,
+                state: {},
+            })
+        }
+    }, [
+        aiWorkflowProposal,
+        aiProposalCanvas.valid,
+        aiProposalCanvas.error,
+        navigate,
+    ])
 
     const templateId = searchParams.get('template')
     const template = templateId ? templates.find(t => t.id === templateId) : null
     const existingWorkflow = (!template && id !== 'new') ? workflows.find(w => w.id === id) : null
 
-    const startingNodes = template
-        ? template.nodes
-        : (existingWorkflow?.canvasNodes?.length ? existingWorkflow.canvasNodes : [])
-    const startingEdges = (template
-        ? template.edges
-        : (existingWorkflow?.canvasEdges?.length ? existingWorkflow.canvasEdges : [])
+    const startingNodes = (
+        aiWorkflowProposal && aiProposalCanvas.valid
+            ? aiProposalCanvas.nodes
+            : template
+                ? template.nodes
+                : (
+                    existingWorkflow?.canvasNodes?.length
+                        ? existingWorkflow.canvasNodes
+                        : []
+                )
+    )
+
+    const startingEdges = (
+        aiWorkflowProposal && aiProposalCanvas.valid
+            ? aiProposalCanvas.edges
+            : template
+                ? template.edges
+                : (
+                    existingWorkflow?.canvasEdges?.length
+                        ? existingWorkflow.canvasEdges
+                        : []
+                )
     ).map(e => ({
         ...e,
         animated: true,
         type: 'smoothstep',
-        style: { stroke: '#818cf8', strokeWidth: 3 },
+        style: {
+            stroke: '#818cf8',
+            strokeWidth: 3,
+        },
         markerEnd: {
             type: MarkerType.ArrowClosed,
             color: '#818cf8',
@@ -110,7 +273,11 @@ function WorkflowBuilderInner() {
     const [reactFlowInstance, setReactFlowInstance] = useState(null)
 
     const [workflowName, setWorkflowName] = useState(
-        template ? template.title : existingWorkflow?.name || 'Untitled Workflow'
+        aiWorkflowProposal && aiProposalCanvas.valid
+            ? aiWorkflowProposal.intent || 'AI Proposed Workflow'
+            : template
+                ? template.title
+                : existingWorkflow?.name || 'Untitled Workflow'
     )
     const [workflowStatus, setWorkflowStatus] = useState(existingWorkflow?.status || 'draft')
     const [selectedNodeId, setSelectedNodeId] = useState(null)

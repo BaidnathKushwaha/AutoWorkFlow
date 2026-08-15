@@ -11,9 +11,30 @@ public record ChatMessageResponse(
         String role,
         String content,
         JsonNode generatedWorkflowJson,
+        WorkflowProposal workflowProposal,
+        WorkflowProposalValidation workflowProposalValidation,
         Instant createdAt
 ) {
-    public static ChatMessageResponse from(AssistantMessage m) {
-        return new ChatMessageResponse(m.getId(), m.getRole().name().toLowerCase(), m.getContent(), m.getGeneratedWorkflowJson(), m.getCreatedAt());
+
+    public static ChatMessageResponse from(
+            AssistantMessage message
+    ) {
+        return from(message, null, null);
+    }
+
+    public static ChatMessageResponse from(
+            AssistantMessage message,
+            WorkflowProposal workflowProposal,
+            WorkflowProposalValidation workflowProposalValidation
+    ) {
+        return new ChatMessageResponse(
+                message.getId(),
+                message.getRole().name().toLowerCase(),
+                message.getContent(),
+                message.getGeneratedWorkflowJson(),
+                workflowProposal,
+                workflowProposalValidation,
+                message.getCreatedAt()
+        );
     }
 }
