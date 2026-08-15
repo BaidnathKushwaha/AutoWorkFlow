@@ -1,9 +1,9 @@
 package com.autoworkflow.assistant;
 
 import com.autoworkflow.assistant.dto.*;
-import com.autoworkflow.assistant.provider.LLMProvider;
 import com.autoworkflow.common.enums.MessageRole;
 import com.autoworkflow.common.exception.ResourceNotFoundException;
+import com.autoworkflow.common.llm.AiService;
 import com.autoworkflow.common.llm.ChatMessage;
 import com.autoworkflow.integration.IntegrationService;
 import com.autoworkflow.node.NodeDefinitionService;
@@ -25,21 +25,23 @@ public class AssistantService {
 
     private final AssistantConversationRepository conversationRepository;
     private final AssistantMessageRepository messageRepository;
-    private final LLMProvider llmProvider;
+    private final AiService aiService;
     private final NodeDefinitionService nodeDefinitionService;
     private final WorkflowProposalValidator workflowProposalValidator;
-    private final IntegrationService integrationService;
     private final UserRepository userRepository;
 
     @Transactional
     public ChatResponse chat(UUID userId, ChatRequest request) {
-        AssistantConversation conversation = resolveConversation(userId, request);
+        AssistantConversation conversation =
+                resolveConversation(userId, request);
 
-        messageRepository.save(AssistantMessage.builder()
-                .conversationId(conversation.getId())
-                .role(MessageRole.USER)
-                .content(request.message())
-                .build());
+        messageRepository.save(
+                AssistantMessage.builder()
+                        .conversationId(conversation.getId())
+                        .role(MessageRole.USER)
+                        .content(request.message())
+                        .build()
+        );
 
         List<AssistantMessage> history =
                 messageRepository.findByConversationIdOrderByCreatedAtAsc(
@@ -50,33 +52,41 @@ public class AssistantService {
         llmMessages.add(ChatMessage.system(buildSystemPrompt()));
 
         history.forEach(message ->
-                llmMessages.add(new ChatMessage(
-                        message.getRole().name().toLowerCase(),
-                        message.getContent()
-                ))
+                llmMessages.add(
+                        new ChatMessage(
+                                message.getRole().name().toLowerCase(),
+                                message.getContent()
+                        )
+                )
         );
 
-        String userOpenAiKey = tryGetUserOpenAiKey(userId);
+        com.autoworkflow.common.llm.ChatRequest llmRequest =
+                com.autoworkflow.common.llm.ChatRequest.builder()
+                        .messages(llmMessages)
+                        .userId(userId)
+                        .build();
 
-        String providerReply = llmProvider.complete(
-                llmMessages,
-                userOpenAiKey
+        var providerResponse = aiService.chat(
+                "auto",
+                llmRequest
         );
 
         WorkflowJsonParser.ParsedAssistantResponse parsedResponse;
 
         try {
-            parsedResponse = WorkflowJsonParser.parse(providerReply);
+            parsedResponse =
+                    WorkflowJsonParser.parse(providerResponse.content());
         } catch (IllegalArgumentException e) {
-            AssistantMessage assistantMessage = messageRepository.save(
-                    AssistantMessage.builder()
-                            .conversationId(conversation.getId())
-                            .role(MessageRole.ASSISTANT)
-                            .content(
-                                    "I could not safely interpret the AI response."
-                            )
-                            .build()
-            );
+            AssistantMessage assistantMessage =
+                    messageRepository.save(
+                            AssistantMessage.builder()
+                                    .conversationId(conversation.getId())
+                                    .role(MessageRole.ASSISTANT)
+                                    .content(
+                                            "I could not safely interpret the AI response."
+                                    )
+                                    .build()
+                    );
 
             userRepository.incrementAiRequestsCount(userId);
 
@@ -92,13 +102,15 @@ public class AssistantService {
             );
         }
 
-        WorkflowProposal proposal = parsedResponse.workflowProposal();
+        WorkflowProposal proposal =
+                parsedResponse.workflowProposal();
 
         WorkflowProposalValidation validation = null;
         JsonNode validatedWorkflowJson = null;
 
         if (proposal != null) {
-            validation = workflowProposalValidator.validate(proposal);
+            validation =
+                    workflowProposalValidator.validate(proposal);
 
             if (validation.valid()) {
                 validatedWorkflowJson =
@@ -106,14 +118,15 @@ public class AssistantService {
             }
         }
 
-        AssistantMessage assistantMessage = messageRepository.save(
-                AssistantMessage.builder()
-                        .conversationId(conversation.getId())
-                        .role(MessageRole.ASSISTANT)
-                        .content(parsedResponse.answer())
-                        .generatedWorkflowJson(validatedWorkflowJson)
-                        .build()
-        );
+        AssistantMessage assistantMessage =
+                messageRepository.save(
+                        AssistantMessage.builder()
+                                .conversationId(conversation.getId())
+                                .role(MessageRole.ASSISTANT)
+                                .content(parsedResponse.answer())
+                                .generatedWorkflowJson(validatedWorkflowJson)
+                                .build()
+                );
 
         userRepository.incrementAiRequestsCount(userId);
 
@@ -121,7 +134,9 @@ public class AssistantService {
                 conversation.getId(),
                 ChatMessageResponse.from(
                         assistantMessage,
-                        proposal != null && validation != null && validation.valid()
+                        proposal != null
+                                && validation != null
+                                && validation.valid()
                                 ? proposal
                                 : null,
                         validation
@@ -129,7 +144,9 @@ public class AssistantService {
         );
     }
 
-    public List<ConversationSummaryResponse> listConversations(UUID userId) {
+    public List<ConversationSummaryResponse> listConversations(
+            UUID userId
+    ) {
         return conversationRepository
                 .findByUserIdOrderByUpdatedAtDesc(userId)
                 .stream()
@@ -151,7 +168,9 @@ public class AssistantService {
                         );
 
         if (!conversation.getUserId().equals(userId)) {
-            throw new ResourceNotFoundException("Conversation not found");
+            throw new ResourceNotFoundException(
+                    "Conversation not found"
+            );
         }
 
         return messageRepository
@@ -184,21 +203,12 @@ public class AssistantService {
                         );
 
         if (!conversation.getUserId().equals(userId)) {
-            throw new ResourceNotFoundException("Conversation not found");
+            throw new ResourceNotFoundException(
+                    "Conversation not found"
+            );
         }
 
         return conversation;
-    }
-
-    private String tryGetUserOpenAiKey(UUID userId) {
-        try {
-            return integrationService.getDecryptedAccessToken(
-                    userId,
-                    "openai"
-            );
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     private String buildSystemPrompt() {
@@ -282,16 +292,27 @@ public class AssistantService {
     private JsonNode convertProposalToPersistedWorkflow(
             WorkflowProposal proposal
     ) {
-        var workflow = JsonUtils.mapper().createObjectNode();
+        var workflow =
+                JsonUtils.mapper().createObjectNode();
 
-        workflow.set("canvasNodes", convertNodes(proposal));
-        workflow.set("canvasEdges", convertEdges(proposal));
+        workflow.set(
+                "canvasNodes",
+                convertNodes(proposal)
+        );
+
+        workflow.set(
+                "canvasEdges",
+                convertEdges(proposal)
+        );
 
         return workflow;
     }
 
-    private JsonNode convertNodes(WorkflowProposal proposal) {
-        var nodes = JsonUtils.mapper().createArrayNode();
+    private JsonNode convertNodes(
+            WorkflowProposal proposal
+    ) {
+        var nodes =
+                JsonUtils.mapper().createArrayNode();
 
         int index = 0;
 
@@ -301,11 +322,23 @@ public class AssistantService {
             canvasNode.put("id", node.id());
             canvasNode.put("type", node.type());
 
-            var position = canvasNode.putObject("position");
-            position.put("x", 100 + (index % 4) * 300);
-            position.put("y", 100 + (index / 4) * 180);
+            var position =
+                    canvasNode.putObject("position");
 
-            canvasNode.set("data", node.configuration());
+            position.put(
+                    "x",
+                    100 + (index % 4) * 300
+            );
+
+            position.put(
+                    "y",
+                    100 + (index / 4) * 180
+            );
+
+            canvasNode.set(
+                    "data",
+                    node.configuration()
+            );
 
             index++;
         }
@@ -313,8 +346,11 @@ public class AssistantService {
         return nodes;
     }
 
-    private JsonNode convertEdges(WorkflowProposal proposal) {
-        var edges = JsonUtils.mapper().createArrayNode();
+    private JsonNode convertEdges(
+            WorkflowProposal proposal
+    ) {
+        var edges =
+                JsonUtils.mapper().createArrayNode();
 
         for (WorkflowProposalEdge edge : proposal.edges()) {
             var canvasEdge = edges.addObject();
@@ -325,7 +361,10 @@ public class AssistantService {
 
             if (edge.configuration() != null
                     && !edge.configuration().isNull()) {
-                canvasEdge.set("data", edge.configuration());
+                canvasEdge.set(
+                        "data",
+                        edge.configuration()
+                );
             }
         }
 
@@ -339,7 +378,8 @@ public class AssistantService {
     }
 
     private String safeErrorMessage(Exception e) {
-        if (e.getMessage() == null || e.getMessage().isBlank()) {
+        if (e.getMessage() == null
+                || e.getMessage().isBlank()) {
             return "Malformed structured assistant response.";
         }
 

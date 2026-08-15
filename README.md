@@ -125,16 +125,21 @@ New nodes are created in a compact state to keep larger workflows readable.
 
 # 🤖 AI Capabilities
 
-AutoWorkflow supports a provider abstraction so workflow nodes do not need to be tightly coupled to a single AI vendor.
+AutoWorkflow uses an application-wide AI provider infrastructure rather than coupling
+AI consumers to a single vendor.
 
-Current provider architecture includes:
+The shared AI layer is:
 
 ```text
-AI Provider
-├── OpenAI
-├── Gemini
-└── OpenRouter
-```
+AI Consumer
+     ↓
+  AiService
+     ↓
+AiProviderRouter
+     ↓
+┌──────────────┬──────────┬─────────┐
+▼              ▼          ▼
+OpenRouter     Gemini     OpenAI
 
 This allows AI based nodes to use the provider layer without changing the workflow execution architecture.
 

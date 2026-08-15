@@ -11,6 +11,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.autoworkflow.common.llm.AiException;
+import com.autoworkflow.common.llm.AiProviderException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -92,6 +94,32 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.toList());
         return build(HttpStatus.BAD_REQUEST, "Validation failed", req, details);
     }
+
+    @ExceptionHandler(AiProviderException.class)
+public ResponseEntity<ErrorResponse> handleAiProvider(
+        AiProviderException ex,
+        HttpServletRequest req
+) {
+    return build(
+            HttpStatus.BAD_GATEWAY,
+            ex.getMessage(),
+            req,
+            null
+    );
+}
+
+@ExceptionHandler(AiException.class)
+public ResponseEntity<ErrorResponse> handleAi(
+        AiException ex,
+        HttpServletRequest req
+) {
+    return build(
+            HttpStatus.BAD_GATEWAY,
+            "AI provider request failed. Please try again.",
+            req,
+            null
+    );
+}
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest req) {

@@ -193,4 +193,130 @@ class OpenRouterClientTest {
                 .isInstanceOf(AiException.class)
                 .hasMessageContaining("empty response");
     }
+
+    @Test
+    void requestBody_enforcesJsonObjectResponseFormat() throws Exception {
+        OpenRouterClient client =
+                client(
+                        "platform-key",
+                        "openrouter/free"
+                );
+
+        client.chat(
+                requestWith(
+                        null,
+                        null,
+                        null,
+                        null
+                )
+        );
+
+        JsonNode sentBody =
+                mapper.readTree(
+                        capturedBody.get()
+                );
+
+        assertThat(
+                sentBody
+                        .get("response_format")
+                        .get("type")
+                        .asText()
+        ).isEqualTo("json_object");
+    }
+
+    @Test
+    void missingAssistantMessage_throwsAiException() {
+        responseBody =
+                "{\"choices\":[{\"message\":null}]}";
+
+        OpenRouterClient client =
+                client(
+                        "platform-key",
+                        "openrouter/free"
+                );
+
+        assertThatThrownBy(
+                () ->
+                        client.chat(
+                                requestWith(
+                                        null,
+                                        null,
+                                        null,
+                                        null
+                                )
+                        )
+        )
+                .isInstanceOf(AiException.class)
+                .hasMessageContaining(
+                        "no assistant message"
+                );
+    }
+
+    @Test
+    void emptyAssistantContent_throwsAiException() {
+        responseBody =
+                "{\"choices\":[{\"message\":{\"content\":\"\"}}]}";
+
+        OpenRouterClient client =
+                client(
+                        "platform-key",
+                        "openrouter/free"
+                );
+
+        assertThatThrownBy(
+                () ->
+                        client.chat(
+                                requestWith(
+                                        null,
+                                        null,
+                                        null,
+                                        null
+                                )
+                        )
+        )
+                .isInstanceOf(AiException.class)
+                .hasMessageContaining(
+                        "empty assistant content"
+                );
+    }
+
+    @Test
+    void temporaryServerFailure_mapsToProviderUnavailable() {
+        responseStatus = 503;
+        responseBody =
+                "{\"error\":{\"message\":\"temporarily unavailable\"}}";
+
+        OpenRouterClient client =
+                client(
+                        "platform-key",
+                        "openrouter/free"
+                );
+
+        assertThatThrownBy(
+                () ->
+                        client.chat(
+                                requestWith(
+                                        null,
+                                        null,
+                                        null,
+                                        null
+                                )
+                        )
+        )
+                .isInstanceOf(AiProviderException.class)
+                .satisfies(ex -> {
+                    AiProviderException providerException =
+                            (AiProviderException) ex;
+
+                    assertThat(
+                            providerException.getCode()
+                    ).isEqualTo(
+                            "PROVIDER_UNAVAILABLE"
+                    );
+
+                    assertThat(
+                            providerException.getHttpStatus()
+                    ).isEqualTo(503);
+                });
+    }
 }
