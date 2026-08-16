@@ -59,9 +59,13 @@ public class SummarizerStrategy implements NodeStrategy {
             return NodeExecutionResult.failed(e.getMessage());
         }
 
-        String provider    = config.path("provider").asText(null);
+        // An unset provider means "use my account-level AI preference" (AiService's
+        // "default" sentinel), NOT the static app.ai.default-provider config — a node's
+        // own explicit choice (including an explicit "auto") still takes precedence
+        // over that preference, per the AI preference precedence rules.
+        String provider    = config.path("provider").asText("default");
         String model       = config.has("model") && !config.path("model").asText().isEmpty()
-                             ? config.path("model").asText() : null;
+                ? config.path("model").asText() : null;
         int    rawMaxLength = config.path("maxLength").asInt(200);
         int    maxLength    = Math.min(10000, Math.max(20, rawMaxLength));
         // Token budget is DERIVED from the character budget, not the same number —
@@ -72,7 +76,7 @@ public class SummarizerStrategy implements NodeStrategy {
 
         String systemPrompt = "You are an expert summarizer. Be concise, clear, and accurate.";
         String userPrompt   = "Summarize the following within approximately " + maxLength
-                              + " characters:\n\n" + text;
+                + " characters:\n\n" + text;
 
         ChatRequest request = ChatRequest.builder()
                 .messages(List.of(
@@ -114,9 +118,14 @@ public class SummarizerStrategy implements NodeStrategy {
     }
 
     private String resolveUserKey(NodeExecutionContext ctx, String provider) {
-        // "auto" isn't a real integration provider — AiProviderRouter resolves a fresh
-        // per-provider key for each attempt itself, so skip the doomed lookup here.
-        if (provider == null || provider.isBlank() || "auto".equalsIgnoreCase(provider)) return null;
+        // Neither "auto" nor "default" is a real integration provider. AUTO mode has
+        // AiProviderRouter resolve a fresh per-provider key for each attempt itself;
+        // "default" resolves to the user's saved AI preference inside AiService, which
+        // isn't known yet at this point in the strategy. Looking either up here would
+        // always fail, so both are skipped rather than wasting a doomed lookup.
+        if (provider == null || provider.isBlank()
+                || "auto".equalsIgnoreCase(provider)
+                || "default".equalsIgnoreCase(provider)) return null;
         try {
             return integrationService.getDecryptedAccessToken(ctx.getUserId(), provider);
         } catch (com.autoworkflow.common.exception.ResourceNotFoundException e) {

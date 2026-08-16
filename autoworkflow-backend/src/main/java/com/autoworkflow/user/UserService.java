@@ -30,46 +30,92 @@ public class UserService {
     }
 
     @Transactional
-    public UserResponse updateProfile(UUID userId, UpdateProfileRequest request) {
+    public UserResponse updateProfile(
+            UUID userId,
+            UpdateProfileRequest request
+    ) {
         User user = getById(userId);
 
         if (!user.getEmail().equalsIgnoreCase(request.email())
                 && userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email already in use: " + request.email());
+            throw new DuplicateResourceException(
+                    "Email already in use: " + request.email()
+            );
         }
 
         user.setName(request.name());
         user.setEmail(request.email());
-        return UserResponse.from(userRepository.save(user));
+
+        return UserResponse.from(
+                userRepository.save(user)
+        );
     }
 
     @Transactional
     public ApiKeyResponse generateApiKey(UUID userId) {
         User user = getById(userId);
+
         String rawKey = ApiKeyGenerator.generate();
-        user.setApiKeyEncrypted(encryptionUtils.encrypt(rawKey));
-        user.setApiKeyLastFour(ApiKeyGenerator.lastFour(rawKey));
+
+        user.setApiKeyEncrypted(
+                encryptionUtils.encrypt(rawKey)
+        );
+
+        user.setApiKeyLastFour(
+                ApiKeyGenerator.lastFour(rawKey)
+        );
+
         userRepository.save(user);
-        return new ApiKeyResponse(rawKey, user.getApiKeyLastFour());
+
+        return new ApiKeyResponse(
+                rawKey,
+                user.getApiKeyLastFour()
+        );
     }
 
     public ApiKeyResponse revealApiKey(UUID userId) {
         User user = getById(userId);
+
         if (user.getApiKeyEncrypted() == null) {
-            throw new ResourceNotFoundException("No API key has been generated yet");
+            throw new ResourceNotFoundException(
+                    "No API key has been generated yet"
+            );
         }
-        String rawKey = encryptionUtils.decrypt(user.getApiKeyEncrypted());
-        return new ApiKeyResponse(rawKey, user.getApiKeyLastFour());
+
+        String rawKey =
+                encryptionUtils.decrypt(
+                        user.getApiKeyEncrypted()
+                );
+
+        return new ApiKeyResponse(
+                rawKey,
+                user.getApiKeyLastFour()
+        );
     }
 
-    public User findByDecryptedApiKey(String candidateRawKey) {
-        // For platform API-key authenticated webhook/trigger calls.
-        // Note: for large user bases, prefer storing a lookup hash (e.g. SHA-256)
-        // of the key alongside the encrypted value to avoid a full table scan.
-        return userRepository.findAll().stream()
-                .filter(u -> u.getApiKeyEncrypted() != null)
-                .filter(u -> encryptionUtils.decrypt(u.getApiKeyEncrypted()).equals(candidateRawKey))
+    public User findByDecryptedApiKey(
+            String candidateRawKey
+    ) {
+        return userRepository.findAll()
+                .stream()
+                .filter(
+                        u ->
+                                u.getApiKeyEncrypted() != null
+                )
+                .filter(
+                        u ->
+                                encryptionUtils
+                                        .decrypt(
+                                                u.getApiKeyEncrypted()
+                                        )
+                                        .equals(candidateRawKey)
+                )
                 .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("Invalid API key"));
+                .orElseThrow(
+                        () ->
+                                new ResourceNotFoundException(
+                                        "Invalid API key"
+                                )
+                );
     }
 }

@@ -61,6 +61,18 @@ class AiRouterStrategyTest {
     }
 
     @Test
+    void unsetProvider_resolvesThroughAiServicesDefaultSentinel_notNullOrStaticConfig() throws Exception {
+        when(aiService.chat(anyString(), any(ChatRequest.class))).thenReturn(new ChatResponse("true", "m"));
+
+        ObjectNode config = JsonUtils.mapper().createObjectNode();
+        config.putArray("branches").add("true").add("false");
+
+        strategy.execute(ctx(config, JsonUtils.mapper().readTree("{\"text\":\"hi\"}")));
+
+        verify(aiService).chat(org.mockito.ArgumentMatchers.eq("default"), any(ChatRequest.class));
+    }
+
+    @Test
     void providerAndModel_bothPreserved_alongsideBranchSelection() throws Exception {
         when(aiService.chat(anyString(), any(ChatRequest.class))).thenReturn(new ChatResponse("urgent", "m"));
 

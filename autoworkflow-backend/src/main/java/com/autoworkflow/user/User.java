@@ -50,6 +50,28 @@ public class User {
     @Column(name = "api_key_last_four", length = 4)
     private String apiKeyLastFour;
 
+    /**
+     * Default AI execution mode for this user.
+     *
+     * Supported values:
+     * auto
+     * openrouter
+     * gemini
+     * openai
+     */
+    @Column(name = "ai_provider", nullable = false, length = 30)
+    @Builder.Default
+    private String aiProvider = "auto";
+
+    /**
+     * Default AI model for this user.
+     *
+     * Null when aiProvider is auto because AUTO mode lets
+     * AiProviderRouter select the provider and its configured model.
+     */
+    @Column(name = "ai_model", length = 150)
+    private String aiModel;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default

@@ -63,6 +63,15 @@ class ClassifierStrategyTest {
     }
 
     @Test
+    void unsetProvider_resolvesThroughAiServicesDefaultSentinel_notNullOrStaticConfig() throws Exception {
+        ObjectNode config = JsonUtils.mapper().createObjectNode();
+
+        strategy.execute(ctx(config, JsonUtils.mapper().readTree("{\"text\":\"hello\"}")));
+
+        verify(aiService).chat(org.mockito.ArgumentMatchers.eq("default"), any(ChatRequest.class));
+    }
+
+    @Test
     void modelNotConfigured_forwardsNull_lettingProviderClientUseItsOwnDefault() throws Exception {
         ObjectNode config = JsonUtils.mapper().createObjectNode();
         config.put("provider", "openrouter");

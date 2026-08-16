@@ -123,6 +123,16 @@ class SummarizerStrategyTest {
     }
 
     @Test
+    void unsetProvider_resolvesThroughAiServicesDefaultSentinel_notNullOrStaticConfig() throws Exception {
+        JsonNode input = JsonUtils.mapper().readTree("{\"text\":\"hello world\"}");
+
+        strategy.execute(ctx(config(null, "text", null), input));
+
+        verify(aiService).chat(org.mockito.ArgumentMatchers.eq("default"), any(ChatRequest.class));
+        verifyNoInteractions(integrationService);
+    }
+
+    @Test
     void providerFailure_propagatesAsNodeFailure_notSwallowed() throws Exception {
         when(aiService.chat(anyString(), any(ChatRequest.class)))
                 .thenThrow(new com.autoworkflow.common.llm.AiException("Gemini quota exceeded"));

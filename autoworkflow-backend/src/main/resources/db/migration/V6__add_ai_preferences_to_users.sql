@@ -1,0 +1,5 @@
+ALTER TABLE users
+    ADD COLUMN ai_provider VARCHAR(30) NOT NULL DEFAULT 'auto';
+
+ALTER TABLE users
+    ADD COLUMN ai_model VARCHAR(150);

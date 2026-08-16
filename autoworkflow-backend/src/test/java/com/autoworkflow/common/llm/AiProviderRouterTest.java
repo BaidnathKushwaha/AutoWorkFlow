@@ -695,7 +695,10 @@ class AiProviderRouterTest {
         AiService service =
                 new AiService(
                         registry,
-                        router
+                        router,
+                        new com.autoworkflow.user.AiPreferenceService(
+                                mock(com.autoworkflow.user.UserRepository.class)
+                        )
                 );
 
         assertThatThrownBy(

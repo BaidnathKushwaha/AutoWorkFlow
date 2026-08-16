@@ -67,7 +67,7 @@ public class AssistantService {
                         .build();
 
         var providerResponse = aiService.chat(
-                "auto",
+                "default",
                 llmRequest
         );
 

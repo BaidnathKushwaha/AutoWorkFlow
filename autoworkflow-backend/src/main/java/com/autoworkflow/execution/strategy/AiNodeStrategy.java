@@ -49,7 +49,11 @@ public class AiNodeStrategy implements NodeStrategy {
                 "Summarize and explain the following:\n\n{{input}}");
         String prompt = promptTemplate.replace("{{input}}", inputText);
 
-        String provider   = config.path("provider").asText(null);
+        // An unset provider means "use my account-level AI preference" (AiService's
+        // "default" sentinel), NOT the static app.ai.default-provider config — a node's
+        // own explicit choice (including an explicit "auto") still takes precedence
+        // over that preference, per the AI preference precedence rules.
+        String provider   = config.path("provider").asText("default");
         String userApiKey = resolveUserKey(ctx, provider);
 
         ChatRequest chatRequest = ChatRequest.builder()
@@ -67,7 +71,7 @@ public class AiNodeStrategy implements NodeStrategy {
 
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.put("result",    chatResponse.content());
-        output.put("provider",  provider != null ? provider : "default");
+        output.put("provider",  provider);
         output.put("inputText", inputText.length() > 300
                 ? inputText.substring(0, 300) + "…" : inputText);
         if (chatResponse.model() != null) output.put("model", chatResponse.model());
@@ -95,11 +99,15 @@ public class AiNodeStrategy implements NodeStrategy {
 
 
     private String resolveUserKey(NodeExecutionContext ctx, String provider) {
-        // "auto" isn't a real integration provider — AiProviderRouter resolves a fresh
-        // per-provider key for each attempt itself (see AiProviderRouter.withResolvedKeyFor),
-        // so looking one up here would always fail and is skipped rather than wasting a
-        // doomed IntegrationService call.
-        if (provider == null || provider.isBlank() || "auto".equalsIgnoreCase(provider)) return null;
+        // Neither "auto" nor "default" is a real integration provider. AUTO mode has
+        // AiProviderRouter resolve a fresh per-provider key for each attempt itself (see
+        // AiProviderRouter.withResolvedKeyFor); "default" resolves to the user's saved
+        // AI preference inside AiService, which is not known yet at this point in the
+        // strategy. Looking either up here would always fail, so both are skipped rather
+        // than wasting a doomed IntegrationService call.
+        if (provider == null || provider.isBlank()
+                || "auto".equalsIgnoreCase(provider)
+                || "default".equalsIgnoreCase(provider)) return null;
         try {
             return integrationService.getDecryptedAccessToken(ctx.getUserId(), provider);
         } catch (com.autoworkflow.common.exception.ResourceNotFoundException e) {

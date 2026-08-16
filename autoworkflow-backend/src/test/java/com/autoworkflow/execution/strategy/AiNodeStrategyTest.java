@@ -59,6 +59,28 @@ class AiNodeStrategyTest {
     }
 
     @Test
+    void unsetProvider_resolvesThroughAiServicesDefaultSentinel_notNullOrStaticConfig() throws Exception {
+        // No "provider" field at all — this must reach AiService as "default" so the
+        // user's account-level AI preference is consulted, not app.ai.default-provider.
+        ObjectNode config = JsonUtils.mapper().createObjectNode();
+        config.put("prompt", "Summarize: {{input}}");
+
+        strategy.execute(ctx(config, JsonUtils.mapper().readTree("{\"text\":\"hello world\"}")));
+
+        verify(aiService).chat(org.mockito.ArgumentMatchers.eq("default"), any(ChatRequest.class));
+    }
+
+    @Test
+    void unsetProvider_neverAttemptsAnIntegrationLookupForTheLiteralWordDefault() throws Exception {
+        ObjectNode config = JsonUtils.mapper().createObjectNode();
+        config.put("prompt", "Summarize: {{input}}");
+
+        strategy.execute(ctx(config, JsonUtils.mapper().readTree("{\"text\":\"hello world\"}")));
+
+        verifyNoInteractions(integrationService);
+    }
+
+    @Test
     void openrouterProvider_resolvesUserKeyThroughExistingIntegrationService() throws Exception {
         when(integrationService.getDecryptedAccessToken(any(), org.mockito.ArgumentMatchers.eq("openrouter")))
                 .thenReturn("user-connected-openrouter-key");

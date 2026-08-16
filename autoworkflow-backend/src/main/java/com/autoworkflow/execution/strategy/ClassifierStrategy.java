@@ -35,10 +35,12 @@ public class ClassifierStrategy implements NodeStrategy {
                 ". Respond with only the label.\n\nText: " + text;
 
         // No hardcoded fallback here — a blank/missing provider is resolved centrally by
-        // AiService using app.ai.default-provider, so this strategy stays provider-agnostic.
+        // AiService: "default" means "use this user's account-level AI preference" (falling
+        // back further to system AUTO only if they have none), so this strategy stays
+        // provider-agnostic. A node's own explicit provider choice still overrides it.
         String provider = ctx.getNodeConfig()
                 .path("provider")
-                .asText(null);
+                .asText("default");
 
         ChatResponse chatResponse = aiService.chat(
                 provider,
@@ -48,13 +50,13 @@ public class ClassifierStrategy implements NodeStrategy {
                         .userId(ctx.getUserId())
                         .build()
         );
-        
+
         String label = chatResponse.content().trim();
 
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.set("input", ctx.getInputPayload());
         output.put("label", label);
-        output.put("provider", provider != null ? provider : "default");
+        output.put("provider", provider);
         if (chatResponse.model() != null) output.put("model", chatResponse.model());
         if (chatResponse.actualProvider() != null) {
             output.put("actualProvider", chatResponse.actualProvider());
@@ -67,4 +69,3 @@ public class ClassifierStrategy implements NodeStrategy {
         return NodeExecutionResult.ok(output);
     }
 }
-

@@ -51,23 +51,25 @@ public class AiRouterStrategy implements NodeStrategy {
                 + ". Respond with only the chosen option text.\nInput: " + inputText;
 
         // No hardcoded fallback here — a blank/missing provider is resolved centrally by
-        // AiService using app.ai.default-provider, so this strategy stays provider-agnostic.
+        // AiService: "default" means "use this user's account-level AI preference" (falling
+        // back further to system AUTO only if they have none), so this strategy stays
+        // provider-agnostic. A node's own explicit provider choice still overrides it.
         String provider = ctx.getNodeConfig()
                 .path("provider")
-                .asText(null);
+                .asText("default");
 
         ChatResponse chatResponse = aiService.chat(provider, ChatRequest.builder()
                 .messages(List.of(ChatMessage.user(prompt)))
                 .model(ctx.getNodeConfig().path("model").asText(null))
                 .userId(ctx.getUserId())
                 .build());
-        
+
         String decision = chatResponse.content().trim();
 
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.set("input", ctx.getInputPayload());
         output.put("route", decision);
-        output.put("provider", provider != null ? provider : "default");
+        output.put("provider", provider);
         if (chatResponse.model() != null) output.put("model", chatResponse.model());
         if (chatResponse.actualProvider() != null) {
             output.put("actualProvider", chatResponse.actualProvider());
@@ -82,4 +84,3 @@ public class AiRouterStrategy implements NodeStrategy {
         return NodeExecutionResult.okWithBranch(output, tookFirstBranch);
     }
 }
-
