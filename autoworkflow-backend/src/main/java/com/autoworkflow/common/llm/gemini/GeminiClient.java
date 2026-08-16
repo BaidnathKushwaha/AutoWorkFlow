@@ -65,6 +65,12 @@ public class GeminiClient implements AiProvider {
         if (request.maxTokens() != null) {
             generationConfig.put("maxOutputTokens", request.maxTokens());
         }
+        if (Boolean.TRUE.equals(request.structuredOutput())) {
+            generationConfig.put(
+                    "responseMimeType",
+                    "application/json"
+            );
+        }
         body.set("generationConfig", generationConfig);
 
         // NOTE: the API key travels as a query param per Google's API contract. It is

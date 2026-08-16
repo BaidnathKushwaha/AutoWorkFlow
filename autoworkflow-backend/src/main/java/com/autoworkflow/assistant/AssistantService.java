@@ -63,6 +63,7 @@ public class AssistantService {
         com.autoworkflow.common.llm.ChatRequest llmRequest =
                 com.autoworkflow.common.llm.ChatRequest.builder()
                         .messages(llmMessages)
+                        .structuredOutput(true)
                         .userId(userId)
                         .build();
 

@@ -1,5 +1,6 @@
 package com.autoworkflow.user;
 
+import com.autoworkflow.common.exception.InvalidAiPreferenceException;
 import com.autoworkflow.common.exception.ResourceNotFoundException;
 import com.autoworkflow.user.dto.AiPreferenceResponse;
 import com.autoworkflow.user.dto.AiPreferenceUpdateRequest;
@@ -15,17 +16,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AiPreferenceService {
 
-    private static final String AUTO = "auto";
-
-    /*
-     * Backend-owned provider/model catalogue.
-     *
-     * These values are configuration choices, not secrets.
-     *
-     * OpenRouter deliberately uses the fixed Gemini 2.5 Flash model rather
-     * than openrouter/free because the Assistant requires predictable
-     * structured output behavior.
-     */
     private static final Map<String, List<String>> SUPPORTED_MODELS = Map.of(
             "openrouter",
             List.of("google/gemini-2.5-flash"),
@@ -54,12 +44,27 @@ public class AiPreferenceService {
     public AiPreferenceResponse get(UUID userId) {
         User user = getUser(userId);
 
+        AiMode mode = user.getAiMode();
+
+        if (mode == null) {
+            mode = AiMode.AUTO;
+        }
+
+        if (mode == AiMode.AUTO) {
+            return response(
+                    AiMode.AUTO,
+                    null,
+                    null
+            );
+        }
+
+        String provider = normalizeProvider(user.getAiProvider());
+        String model = validateModel(provider, user.getAiModel());
+
         return response(
-                normalizeProvider(user.getAiProvider()),
-                normalizeModel(
-                        normalizeProvider(user.getAiProvider()),
-                        user.getAiModel()
-                )
+                AiMode.SPECIFIC,
+                provider,
+                model
         );
     }
 
@@ -70,61 +75,87 @@ public class AiPreferenceService {
     ) {
         User user = getUser(userId);
 
-        String provider = normalizeProvider(request.provider());
-        String model = normalizeModel(provider, request.model());
+        if (request == null || request.mode() == null) {
+            throw new InvalidAiPreferenceException(
+                    "AI mode is required"
+            );
+        }
 
+        if (request.mode() == AiMode.AUTO) {
+            user.setAiMode(AiMode.AUTO);
+            user.setAiProvider(null);
+            user.setAiModel(null);
+
+            userRepository.save(user);
+
+            return response(
+                    AiMode.AUTO,
+                    null,
+                    null
+            );
+        }
+
+        String provider = normalizeProvider(request.provider());
+        String model = validateModel(provider, request.model());
+
+        user.setAiMode(AiMode.SPECIFIC);
         user.setAiProvider(provider);
         user.setAiModel(model);
 
         userRepository.save(user);
 
-        return response(provider, model);
+        return response(
+                AiMode.SPECIFIC,
+                provider,
+                model
+        );
     }
 
-    /**
-     * Resolves the user's configured default for an AI operation.
-     *
-     * Explicit provider selections (a real provider key like "openai", or the literal
-     * "auto") supplied by workflow nodes or callers continue to bypass this method —
-     * see AiService.chat(). Only the "default" sentinel routes here, meaning "no
-     * explicit override was given; use this user's account-level AI preference."
-     */
     @Transactional(readOnly = true)
     public ResolvedPreference resolveForUser(UUID userId) {
         if (userId == null) {
-            return new ResolvedPreference(AUTO, null);
+            return ResolvedPreference.auto();
         }
 
         User user = getUser(userId);
 
+        AiMode mode = user.getAiMode();
+
+        if (mode == null || mode == AiMode.AUTO) {
+            return ResolvedPreference.auto();
+        }
+
         String provider = normalizeProvider(user.getAiProvider());
+        String model = validateModel(provider, user.getAiModel());
 
         return new ResolvedPreference(
+                AiMode.SPECIFIC,
                 provider,
-                normalizeModel(provider, user.getAiModel())
+                model
         );
     }
 
     private User getUser(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() ->
-                        ResourceNotFoundException.of("User", userId)
+                        ResourceNotFoundException.of(
+                                "User",
+                                userId
+                        )
                 );
     }
 
     private String normalizeProvider(String provider) {
         if (provider == null || provider.isBlank()) {
-            return AUTO;
+            throw new InvalidAiPreferenceException(
+                    "AI provider is required for SPECIFIC mode"
+            );
         }
 
         String normalized = provider.trim().toLowerCase();
 
-        if (AUTO.equals(normalized)) {
-            return AUTO;
-        }
-
         if (!SUPPORTED_MODELS.containsKey(normalized)) {
-            throw new IllegalArgumentException(
+            throw new InvalidAiPreferenceException(
                     "Unsupported AI provider: " + provider
             );
         }
@@ -132,18 +163,14 @@ public class AiPreferenceService {
         return normalized;
     }
 
-    private String normalizeModel(
+    private String validateModel(
             String provider,
             String model
     ) {
-        if (AUTO.equals(provider)) {
-            return null;
-        }
-
         if (model == null || model.isBlank()) {
-            return SUPPORTED_MODELS
-                    .get(provider)
-                    .get(0);
+            throw new InvalidAiPreferenceException(
+                    "AI model is required for SPECIFIC mode"
+            );
         }
 
         String normalized = model.trim();
@@ -152,9 +179,12 @@ public class AiPreferenceService {
                 .get(provider)
                 .contains(normalized)) {
 
-            throw new IllegalArgumentException(
-                    "Unsupported AI model '" + model
-                            + "' for provider '" + provider + "'"
+            throw new InvalidAiPreferenceException(
+                    "Unsupported AI model '"
+                            + model
+                            + "' for provider '"
+                            + provider
+                            + "'"
             );
         }
 
@@ -162,16 +192,12 @@ public class AiPreferenceService {
     }
 
     private AiPreferenceResponse response(
+            AiMode mode,
             String provider,
             String model
     ) {
         List<AiPreferenceResponse.ProviderOption> providers =
                 List.of(
-                        new AiPreferenceResponse.ProviderOption(
-                                AUTO,
-                                "Auto",
-                                List.of()
-                        ),
                         new AiPreferenceResponse.ProviderOption(
                                 "openrouter",
                                 PROVIDER_LABELS.get("openrouter"),
@@ -190,6 +216,7 @@ public class AiPreferenceService {
                 );
 
         return new AiPreferenceResponse(
+                mode,
                 provider,
                 model,
                 providers
@@ -197,8 +224,17 @@ public class AiPreferenceService {
     }
 
     public record ResolvedPreference(
+            AiMode mode,
             String provider,
             String model
     ) {
+
+        public static ResolvedPreference auto() {
+            return new ResolvedPreference(
+                    AiMode.AUTO,
+                    null,
+                    null
+            );
+        }
     }
 }

@@ -4,6 +4,7 @@ import com.autoworkflow.user.AiPreferenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import com.autoworkflow.user.AiMode;
 
 @Service
 @RequiredArgsConstructor
@@ -20,35 +21,31 @@ public class AiService {
             String providerName,
             ChatRequest request
     ) {
-        String resolvedProvider =
-                providerName;
+        String resolvedProvider = providerName;
+        ChatRequest resolvedRequest = request;
 
-        ChatRequest resolvedRequest =
-                request;
-
-        /*
-         * "default" means use the authenticated user's account-level
-         * AI preference from Settings.
-         *
-         * Existing explicit provider calls are untouched.
-         */
         if ("default".equalsIgnoreCase(providerName)) {
+
             AiPreferenceService.ResolvedPreference preference =
                     aiPreferenceService.resolveForUser(
                             request.userId()
                     );
 
+            if (preference.mode() == AiMode.AUTO) {
+                return router.chat(request);
+            }
+
             resolvedProvider = preference.provider();
 
-            resolvedRequest =
-                    withModel(
-                            request,
-                            preference.model()
-                    );
+            resolvedRequest = withModel(
+                    request,
+                    preference.model()
+            );
         }
 
         if (resolvedProvider == null
                 || resolvedProvider.isBlank()) {
+
             resolvedProvider = defaultProvider;
         }
 
@@ -56,8 +53,7 @@ public class AiService {
             return router.chat(resolvedRequest);
         }
 
-        AiProvider provider =
-                registry.get(resolvedProvider);
+        AiProvider provider = registry.get(resolvedProvider);
 
         if (provider == null) {
             throw new AiException(
@@ -81,6 +77,7 @@ public class AiService {
                 .model(model)
                 .temperature(request.temperature())
                 .maxTokens(request.maxTokens())
+                .structuredOutput(request.structuredOutput())
                 .userId(request.userId())
                 .build();
     }

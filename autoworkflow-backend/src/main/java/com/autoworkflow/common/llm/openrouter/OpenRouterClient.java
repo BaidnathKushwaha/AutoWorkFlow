@@ -93,16 +93,12 @@ public class OpenRouterClient implements AiProvider {
             );
         }
 
-        /*
-         * AutoWorkFlow's assistant contract is JSON-only.
-         * OpenRouter supports response_format for models that support
-         * structured output. The configured default is openrouter/free,
-         * whose router filters for models supporting structured outputs.
-         */
-        body.put(
-                "response_format",
-                Map.of("type", "json_object")
-        );
+        if (Boolean.TRUE.equals(request.structuredOutput())) {
+            body.put(
+                    "response_format",
+                    Map.of("type", "json_object")
+            );
+        }
 
         log.debug(
                 "Calling OpenRouter model={}",

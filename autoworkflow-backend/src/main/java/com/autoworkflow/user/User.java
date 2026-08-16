@@ -59,9 +59,13 @@ public class User {
      * gemini
      * openai
      */
-    @Column(name = "ai_provider", nullable = false, length = 30)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ai_mode", nullable = false, length = 20)
     @Builder.Default
-    private String aiProvider = "auto";
+    private AiMode aiMode = AiMode.AUTO;
+
+    @Column(name = "ai_provider", length = 30)
+    private String aiProvider;
 
     /**
      * Default AI model for this user.

@@ -131,4 +131,17 @@ public ResponseEntity<ErrorResponse> handleAi(
         ErrorResponse body = new ErrorResponse(message, req.getRequestURI(), status.value(), details);
         return ResponseEntity.status(status).body(body);
     }
+
+    @ExceptionHandler(InvalidAiPreferenceException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidAiPreference(
+            InvalidAiPreferenceException ex,
+            HttpServletRequest req
+    ) {
+        return build(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage(),
+                req,
+                null
+        );
+    }
 }

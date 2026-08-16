@@ -39,13 +39,27 @@ public class OpenAiClient implements AiProvider {
         String model = (request.model() != null && !request.model().isBlank()) ? request.model() : defaultModel;
         double temp = request.temperature() != null ? request.temperature() : 0.7;
 
-        Map<String, Object> body = Map.of(
-                "model", model,
-                "temperature", temp,
-                "messages", request.messages().stream()
-                        .map(m -> Map.of("role", m.role(), "content", m.content()))
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+
+        body.put("model", model);
+        body.put("temperature", temp);
+
+        body.put(
+                "messages",
+                request.messages().stream()
+                        .map(m -> Map.of(
+                                "role", m.role(),
+                                "content", m.content()
+                        ))
                         .toList()
         );
+
+        if (Boolean.TRUE.equals(request.structuredOutput())) {
+            body.put(
+                    "response_format",
+                    Map.of("type", "json_object")
+            );
+        }
 
         log.debug("Calling OpenAI model={}", model);
 

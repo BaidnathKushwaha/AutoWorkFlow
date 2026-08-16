@@ -1,6 +1,7 @@
 package com.autoworkflow.common.llm;
 
 import com.autoworkflow.common.llm.openrouter.OpenRouterClient;
+import com.autoworkflow.user.AiMode;
 import com.autoworkflow.user.AiPreferenceService;
 import com.autoworkflow.user.User;
 import com.autoworkflow.user.UserRepository;
@@ -21,8 +22,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * Verifies AiProvider registration/discovery ONLY. As of Phase 8, the key -> AiProvider
@@ -169,15 +169,19 @@ class AiServiceTest {
      * rather than through the configured application.yml default-provider.
      */
 
-    private User userWithPreference(String provider, String model) {
-        User user = User.builder()
+    private User userWithPreference(
+            AiMode mode,
+            String provider,
+            String model
+    ) {
+        return User.builder()
                 .id(UUID.randomUUID())
                 .name("Preference User")
                 .email("pref-user@example.com")
+                .aiMode(mode)
                 .aiProvider(provider)
                 .aiModel(model)
                 .build();
-        return user;
     }
 
     @Test
@@ -190,7 +194,7 @@ class AiServiceTest {
         UUID userId = UUID.randomUUID();
         UserRepository userRepository = mock(UserRepository.class);
         when(userRepository.findById(userId))
-                .thenReturn(Optional.of(userWithPreference("auto", null)));
+                .thenReturn(Optional.of(userWithPreference(AiMode.AUTO, null, null)));
 
         AiService service = new AiService(registry, router, new AiPreferenceService(userRepository));
         // Configured application.yml default is deliberately different from "auto" here, to prove
@@ -215,7 +219,7 @@ class AiServiceTest {
         UUID userId = UUID.randomUUID();
         UserRepository userRepository = mock(UserRepository.class);
         when(userRepository.findById(userId))
-                .thenReturn(Optional.of(userWithPreference("gemini", "gemini-3.6-flash")));
+                .thenReturn(Optional.of(userWithPreference(AiMode.SPECIFIC,"gemini", "gemini-3.6-flash")));
 
         AiService service = new AiService(registry, router, new AiPreferenceService(userRepository));
 
@@ -240,5 +244,86 @@ class AiServiceTest {
                 ChatRequest.builder().messages(List.of(ChatMessage.user("hi"))).build());
 
         assertThat(response.content()).isEqualTo("response from real OpenRouterClient");
+    }
+    @Test
+    void specificPreference_doesNotUseRouterFallback() {
+        AiProvider openrouter = mock(AiProvider.class);
+        when(openrouter.key()).thenReturn("openrouter");
+
+        when(openrouter.chat(any()))
+                .thenReturn(
+                        new ChatResponse(
+                                "specific-response",
+                                "google/gemini-2.5-flash"
+                        )
+                );
+
+        AiProvider gemini = mock(AiProvider.class);
+        when(gemini.key()).thenReturn("gemini");
+
+        AiProviderRegistry registry =
+                new AiProviderRegistry(
+                        List.of(
+                                openrouter,
+                                gemini
+                        )
+                );
+
+        AiProviderRouter router =
+                mock(AiProviderRouter.class);
+
+        UUID userId = UUID.randomUUID();
+
+        User user = User.builder()
+                .id(userId)
+                .name("Specific User")
+                .email("specific@example.com")
+                .aiMode(AiMode.SPECIFIC)
+                .aiProvider("openrouter")
+                .aiModel("google/gemini-2.5-flash")
+                .build();
+
+        UserRepository repository =
+                mock(UserRepository.class);
+
+        when(repository.findById(userId))
+                .thenReturn(Optional.of(user));
+
+        AiPreferenceService preferenceService =
+                new AiPreferenceService(repository);
+
+        AiService service =
+                new AiService(
+                        registry,
+                        router,
+                        preferenceService
+                );
+
+        ChatRequest request =
+                ChatRequest.builder()
+                        .messages(
+                                List.of(
+                                        ChatMessage.user("hello")
+                                )
+                        )
+                        .userId(userId)
+                        .build();
+
+        ChatResponse response =
+                service.chat(
+                        "default",
+                        request
+                );
+
+        assertThat(response.content())
+                .isEqualTo("specific-response");
+
+        verify(openrouter)
+                .chat(argThat(r ->
+                        "google/gemini-2.5-flash"
+                                .equals(r.model())
+                ));
+
+        verifyNoInteractions(router);
     }
 }

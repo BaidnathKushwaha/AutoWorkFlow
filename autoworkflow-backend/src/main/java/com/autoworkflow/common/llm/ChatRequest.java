@@ -11,6 +11,7 @@ public record ChatRequest(
         String model,
         Double temperature,
         Integer maxTokens,
+        Boolean structuredOutput,
         /**
          * Only used by AiProviderRouter (AUTO mode) — direct/manual provider calls leave
          * this null and it's ignored. Strategies resolve `userApiKey` themselves for a

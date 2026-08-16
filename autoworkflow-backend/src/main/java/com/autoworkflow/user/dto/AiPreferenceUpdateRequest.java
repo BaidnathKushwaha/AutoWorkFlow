@@ -1,9 +1,13 @@
 package com.autoworkflow.user.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.autoworkflow.user.AiMode;
+import jakarta.validation.constraints.NotNull;
 
 public record AiPreferenceUpdateRequest(
-        @NotBlank(message = "AI provider is required")
+
+        @NotNull(message = "AI mode is required")
+        AiMode mode,
+
         String provider,
 
         String model
