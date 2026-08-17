@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { authService } from '../services/auth/authService'
-import { STORAGE_KEYS } from '../utils/constants'
+import { STORAGE_KEYS, assistantActiveConversationKey } from '../utils/constants'
 
 // Initial state helpers
 const getStoredUser = () => {
@@ -91,6 +91,12 @@ export const useAuthStore = create((set) => ({
 
   logout: async (localOnly = false) => {
     const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN)
+    const user = getStoredUser()
+    const activeConversationKey = assistantActiveConversationKey(user?.id)
+
+    if (activeConversationKey) {
+      localStorage.removeItem(activeConversationKey)
+    }
 
     // Clear localStorage and state first to immediately update UI
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN)
