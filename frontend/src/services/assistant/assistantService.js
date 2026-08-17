@@ -22,6 +22,13 @@ export const assistantService = {
   async getHistory(conversationId) {
     return apiClient.get(`/api/assistant/conversations/${conversationId}/messages`)
   },
+
+  /**
+   * Delete an assistant conversation owned by the authenticated user.
+   */
+  async deleteConversation(conversationId) {
+    return apiClient.delete(`/api/assistant/conversations/${conversationId}`)
+  },
 }
 
 export default assistantService
