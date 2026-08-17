@@ -18,6 +18,10 @@ export const STORAGE_KEYS = {
   AUTHED: 'autoworkflow_authed',
 }
 
+export function assistantActiveConversationKey(userId) {
+  return userId ? `assistant.activeConversation.${userId}` : null
+}
+
 export const WORKFLOW_STATUS = {
   ACTIVE: 'active',
   DRAFT: 'draft',
