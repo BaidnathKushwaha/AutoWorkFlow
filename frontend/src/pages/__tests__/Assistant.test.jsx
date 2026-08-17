@@ -73,7 +73,7 @@ beforeEach(() => {
 
     assistantService.chat.mockResolvedValue({
         data: {
-            conversationId: 'conversation-1',
+            conversationId: 'conversation-6',
             message: {
                 content: 'Assistant reply',
             },
@@ -137,8 +137,7 @@ describe('Assistant conversation persistence and chat management', () => {
             'Create a workflow that reads my Gmail and posts summaries to Slack...'
         )
 
-        await user.type(input, 'Start a new workflow')
-        await user.click(screen.getByRole('button', { name: '' }))
+        await user.type(input, 'Start a new workflow{Enter}')
 
         await waitFor(() => {
             expect(assistantService.chat).toHaveBeenCalledWith({
@@ -148,7 +147,7 @@ describe('Assistant conversation persistence and chat management', () => {
 
         expect(
             localStorage.getItem('assistant.activeConversation.user-1')
-        ).toBe('conversation-1')
+        ).toBe('conversation-6')
     })
 
     it('opens a previous conversation without creating a new one', async () => {
