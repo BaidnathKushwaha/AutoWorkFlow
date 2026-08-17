@@ -39,10 +39,22 @@ public class AiProviderException extends AiException {
         String code;
         String message;
 
-        if (httpStatus == 429 || lower.contains("resource_exhausted") || lower.contains("insufficient_quota") || lower.contains("quota")) {
+        if (
+                httpStatus == 429
+                        || (
+                        "openrouter".equalsIgnoreCase(provider)
+                                && httpStatus == 402
+                )
+                        || lower.contains("resource_exhausted")
+                        || lower.contains("insufficient_quota")
+                        || lower.contains("quota")
+        ) {
             code = "QUOTA_EXCEEDED";
-            message = capitalize(provider) + " quota exceeded. Check your " + capitalize(provider)
-                    + " plan/billing, or switch this node to a different connected provider.";
+            message =
+                    capitalize(provider)
+                            + " quota exceeded. Check your "
+                            + capitalize(provider)
+                            + " plan/billing, or switch this node to a different connected provider.";
         } else if (httpStatus == 401 || httpStatus == 403 || lower.contains("invalid_api_key") || lower.contains("permission_denied") || lower.contains("api_key_invalid")) {
             code = "AUTH_FAILED";
             message = capitalize(provider) + " rejected the API key. Reconnect " + capitalize(provider) + " in Integrations.";
