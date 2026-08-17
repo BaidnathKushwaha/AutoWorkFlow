@@ -382,8 +382,9 @@ function ExecutionPreferencesSection() {
   )
 
   const [providers, setProviders] = useState([])
-  const [defaultProvider, setDefaultProvider] = useState('auto')
-  const [defaultModel, setDefaultModel] = useState('')
+  const [mode, setMode] = useState('AUTO')
+  const [provider, setProvider] = useState('')
+  const [model, setModel] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -401,9 +402,9 @@ function ExecutionPreferencesSection() {
                   : []
           )
 
-          setDefaultProvider(
-              preferences?.provider || 'auto'
-          )
+          setMode(preferences?.mode || 'AUTO')
+          setProvider(preferences?.provider || '')
+          setModel(preferences?.model || '')
 
           setDefaultModel(
               preferences?.model || ''
@@ -447,89 +448,142 @@ function ExecutionPreferencesSection() {
     )
   }
 
-  const saveAiPreference = async (
-      provider,
-      model
-  ) => {
-    setSaving(true)
+    const saveAiPreference = async (
+        nextMode,
+        nextProvider,
+        nextModel
+    ) => {
+        setSaving(true)
 
-    try {
-      const updated =
-          await userService.updateAiPreferences({
+        try {
+            const updated =
+                await userService.updateAiPreferences({
+                    mode: nextMode,
+                    provider:
+                        nextMode === 'SPECIFIC'
+                            ? nextProvider
+                            : null,
+                    model:
+                        nextMode === 'SPECIFIC'
+                            ? nextModel
+                            : null,
+                })
+
+            setMode(
+                updated?.mode || nextMode
+            )
+
+            setProvider(
+                updated?.provider || ''
+            )
+
+            setModel(
+                updated?.model || ''
+            )
+
+            if (
+                Array.isArray(updated?.providers)
+            ) {
+                setProviders(updated.providers)
+            }
+
+            toast.success(
+                'AI preferences updated.'
+            )
+        } catch (err) {
+            toast.error(
+                err?.response?.data?.message ||
+                err?.message ||
+                'Could not update AI preferences.'
+            )
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleModeChange = (nextMode) => {
+        if (nextMode === 'AUTO') {
+            setMode('AUTO')
+            setProvider('')
+            setModel('')
+
+            saveAiPreference(
+                'AUTO',
+                null,
+                null
+            )
+
+            return
+        }
+
+        setMode('SPECIFIC')
+
+        const nextProvider =
+            provider ||
+            providers[0]?.key ||
+            ''
+
+        const providerDefinition =
+            providers.find(
+                (item) =>
+                    item.key === nextProvider
+            )
+
+        const nextModel =
+            model &&
+            providerDefinition?.models?.includes(model)
+                ? model
+                : ''
+
+        setProvider(nextProvider)
+        setModel(nextModel)
+
+        if (nextProvider && nextModel) {
+            saveAiPreference(
+                'SPECIFIC',
+                nextProvider,
+                nextModel
+            )
+        }
+    }
+
+    const handleProviderChange = (nextProvider) => {
+        const providerDefinition =
+            providers.find(
+                (item) =>
+                    item.key === nextProvider
+            )
+
+        const models =
+            providerDefinition?.models || []
+
+        const nextModel =
+            models.length === 1
+                ? models[0]
+                : ''
+
+        setMode('SPECIFIC')
+        setProvider(nextProvider)
+        setModel(nextModel)
+
+        if (nextModel) {
+            saveAiPreference(
+                'SPECIFIC',
+                nextProvider,
+                nextModel
+            )
+        }
+    }
+
+    const handleModelChange = (nextModel) => {
+        setModel(nextModel)
+
+        saveAiPreference(
+            'SPECIFIC',
             provider,
-            model:
-                provider === 'auto'
-                    ? null
-                    : model,
-          })
-
-      setDefaultProvider(
-          updated?.provider || provider
-      )
-
-      setDefaultModel(
-          updated?.model || ''
-      )
-
-      if (
-          Array.isArray(updated?.providers)
-      ) {
-        setProviders(updated.providers)
-      }
-
-      toast.success(
-          'AI preferences updated.'
-      )
-    } catch (err) {
-      toast.error(
-          err?.response?.data?.message ||
-          err?.message ||
-          'Could not update AI preferences.'
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleProviderChange = (provider) => {
-    if (provider === 'auto') {
-      setDefaultProvider('auto')
-      setDefaultModel('')
-
-      saveAiPreference(
-          'auto',
-          null
-      )
-
-      return
-    }
-
-    const providerDefinition =
-        providers.find(
-            (item) =>
-                item.key === provider
+            nextModel
         )
-
-    const firstModel =
-        providerDefinition?.models?.[0] || ''
-
-    setDefaultProvider(provider)
-    setDefaultModel(firstModel)
-
-    saveAiPreference(
-        provider,
-        firstModel
-    )
-  }
-
-  const handleModelChange = (model) => {
-    setDefaultModel(model)
-
-    saveAiPreference(
-        defaultProvider,
-        model
-    )
-  }
+    }
 
   return (
       <SectionCard
@@ -586,47 +640,37 @@ function ExecutionPreferencesSection() {
             </select>
           </div>
 
-          <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-              }}
-          >
-            <label
+            <div
                 style={{
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-secondary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
                 }}
             >
-              Default AI Provider
-            </label>
+                <label style={labelStyle}>
+                    AI Mode
+                </label>
 
-            <select
-                value={defaultProvider}
-                onChange={(e) =>
-                    handleProviderChange(
-                        e.target.value
-                    )
-                }
-                disabled={
-                    loading || saving
-                }
-                style={inputStyle}
-            >
-              {providers.map(
-                  (provider) => (
-                      <option
-                          key={provider.key}
-                          value={provider.key}
-                      >
-                        {provider.label}
-                      </option>
-                  )
-              )}
-            </select>
-          </div>
+                <select
+                    aria-label="AI Mode"
+                    value={mode}
+                    onChange={(e) =>
+                        handleModeChange(
+                            e.target.value
+                        )
+                    }
+                    disabled={loading || saving}
+                    style={inputStyle}
+                >
+                    <option value="AUTO">
+                        Auto
+                    </option>
+
+                    <option value="SPECIFIC">
+                        Specific
+                    </option>
+                </select>
+            </div>
 
           <div
               style={{
@@ -646,55 +690,103 @@ function ExecutionPreferencesSection() {
               Default AI Model
             </label>
 
-            {defaultProvider === 'auto' ? (
-                <input
-                    type="text"
-                    value="Automatic"
-                    readOnly
-                    disabled
-                    style={{
-                      ...inputStyle,
-                      opacity: 0.7,
-                    }}
-                />
-            ) : (
-                <select
-                    value={defaultModel}
-                    onChange={(e) =>
-                        handleModelChange(
-                            e.target.value
-                        )
-                    }
-                    disabled={
-                        loading ||
-                        saving ||
-                        availableModels.length === 0
-                    }
-                    style={inputStyle}
-                >
-                  {availableModels.map(
-                      (model) => (
-                          <option
-                              key={model}
-                              value={model}
-                          >
-                            {model}
-                          </option>
-                      )
-                  )}
-                </select>
-            )}
+              {mode === 'SPECIFIC' && (
+                  <>
+                      <div
+                          style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                          }}
+                      >
+                          <label style={labelStyle}>
+                              AI Provider
+                          </label>
 
-            <span
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--text-muted)',
-                }}
-            >
-            {defaultProvider === 'auto'
-                ? 'Uses the configured provider fallback chain.'
-                : 'This provider and model are used for account-level AI operations.'}
-          </span>
+                          <select
+                              aria-label="AI Provider"
+                              value={provider}
+                              onChange={(e) =>
+                                  handleProviderChange(
+                                      e.target.value
+                                  )
+                              }
+                              disabled={
+                                  loading || saving
+                              }
+                              style={inputStyle}
+                          >
+                              <option value="">
+                                  Select provider
+                              </option>
+
+                              {providers.map((item) => (
+                                  <option
+                                      key={item.key}
+                                      value={item.key}
+                                  >
+                                      {item.label}
+                                  </option>
+                              ))}
+                          </select>
+                      </div>
+
+                      <div
+                          style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                          }}
+                      >
+                          <label style={labelStyle}>
+                              AI Model
+                          </label>
+
+                          <select
+                              aria-label="AI Model"
+                              value={model}
+                              onChange={(e) =>
+                                  handleModelChange(
+                                      e.target.value
+                                  )
+                              }
+                              disabled={
+                                  loading ||
+                                  saving ||
+                                  !provider ||
+                                  availableModels.length === 0
+                              }
+                              style={inputStyle}
+                          >
+                              <option value="">
+                                  Select model
+                              </option>
+
+                              {availableModels.map(
+                                  (item) => (
+                                      <option
+                                          key={item}
+                                          value={item}
+                                      >
+                                          {item}
+                                      </option>
+                                  )
+                              )}
+                          </select>
+                      </div>
+                  </>
+              )}
+
+              <span
+                  style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted)',
+                  }}
+              >
+    {mode === 'AUTO'
+        ? 'Uses the configured provider fallback chain.'
+        : 'Uses exactly the selected provider and model.'}
+</span>
           </div>
         </div>
       </SectionCard>

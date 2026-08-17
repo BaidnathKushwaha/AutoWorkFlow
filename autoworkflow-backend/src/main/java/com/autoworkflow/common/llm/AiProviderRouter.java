@@ -117,6 +117,7 @@ public class AiProviderRouter {
                 .model(request.model())
                 .temperature(request.temperature())
                 .maxTokens(request.maxTokens())
+                .structuredOutput(request.structuredOutput())
                 .userId(request.userId())
                 .build();
     }
@@ -130,6 +131,7 @@ public class AiProviderRouter {
                 .userApiKey(original.userApiKey())
                 .temperature(original.temperature())
                 .maxTokens(original.maxTokens())
+                .structuredOutput(original.structuredOutput())
                 .userId(original.userId())
                 .model(null)
                 .build();

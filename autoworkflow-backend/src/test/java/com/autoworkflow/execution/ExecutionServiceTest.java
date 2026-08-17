@@ -78,20 +78,54 @@ class ExecutionServiceTest {
     }
 
     @Test
-    void webhookAndScheduleTriggeredExecutions_alsoUseExecutionModeValidation() throws Exception {
-        // Deployment already guaranteed a trigger exists by the time a webhook/schedule
-        // execution happens — re-checking that at every single run would be redundant,
-        // not a correctness requirement. Both should use the same relaxed validation call.
-        Workflow workflow = standaloneSummarizerWorkflow();
-        when(workflowRepository.findById(workflowId)).thenReturn(Optional.of(workflow));
-        when(workflowExecutor.run(any(), any(), any(), any(), any(), any()))
-                .thenReturn(WorkflowExecutor.ExecutionRunResult.success(List.of(), JsonUtils.mapper().createObjectNode()));
+    void webhookAndScheduleTriggeredExecutions_useDeploymentValidation()
+            throws Exception {
 
-        service.execute(workflowId, TriggeredBy.WEBHOOK, JsonUtils.mapper().createObjectNode());
-        service.execute(workflowId, TriggeredBy.SCHEDULE, JsonUtils.mapper().createObjectNode());
+        Workflow workflow =
+                standaloneSummarizerWorkflow();
 
-        verify(workflowValidator, times(2)).validateExecutionOrThrow(any(), any());
-        verify(workflowValidator, never()).validateDeploymentOrThrow(any(), any());
+        when(workflowRepository.findById(workflowId))
+                .thenReturn(Optional.of(workflow));
+
+        when(workflowExecutor.run(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        )).thenReturn(
+                WorkflowExecutor.ExecutionRunResult.success(
+                        List.of(),
+                        JsonUtils.mapper()
+                                .createObjectNode()
+                )
+        );
+
+        service.execute(
+                workflowId,
+                TriggeredBy.WEBHOOK,
+                JsonUtils.mapper()
+                        .createObjectNode()
+        );
+
+        service.execute(
+                workflowId,
+                TriggeredBy.SCHEDULE,
+                JsonUtils.mapper()
+                        .createObjectNode()
+        );
+
+        verify(workflowValidator, times(2))
+                .validateDeploymentOrThrow(
+                        any(Workflow.class)
+                );
+
+        verify(workflowValidator, never())
+                .validateExecutionOrThrow(
+                        any(),
+                        any()
+                );
     }
 
     @Test

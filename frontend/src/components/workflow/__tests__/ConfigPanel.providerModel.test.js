@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { resolveProviderChangePatch } from '../ConfigPanel'
 
-// NOTE: no test runner config (vitest.config.js / package.json test deps) was present
-// in the uploaded project, so this file is written against Vitest (the natural fit for
-// a Vite + React project) but has not actually been run. See the accompanying report.
-
 describe('resolveProviderChangePatch', () => {
   it('switching TO auto clears the model, regardless of what was previously stored', () => {
     expect(resolveProviderChangePatch('auto', 'gemini-3.6-flash')).toEqual({ provider: 'auto', model: '' })

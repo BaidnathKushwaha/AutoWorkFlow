@@ -95,11 +95,13 @@ class WorkflowJsonParserTest {
     @Test
     void malformedJson_isRejected() {
         String response = """
-                {
-                  "answer": "I can help you build a workflow.",
-                  "workflowProposal": {
-                    "intent": "Summarize"
-                """;
+            {
+              "answer": "I can help you build a workflow.",
+              "workflowProposal": {
+                "intent": "Summarize",
+              }
+            }
+            """;
 
         assertThatThrownBy(
                 () -> WorkflowJsonParser.parse(response)
