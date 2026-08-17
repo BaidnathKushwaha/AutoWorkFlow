@@ -138,17 +138,7 @@ export default function Assistant() {
                 setConversations(recent)
 
                 if (storedConversationId) {
-                    const exists = recent.some(
-                        (conversation) => conversation.id === storedConversationId
-                    )
-
-                    if (exists) {
-                        await loadConversation(storedConversationId)
-                    } else {
-                        persistActiveConversation(null)
-                        setConversationId(null)
-                        setMessages([WELCOME_MESSAGE])
-                    }
+                    await loadConversation(storedConversationId)
                 } else {
                     setConversationId(null)
                     setMessages([WELCOME_MESSAGE])
@@ -186,7 +176,7 @@ export default function Assistant() {
     }, [messages, isLoading])
 
     const handleNewChat = () => {
-        if (isLoading) return
+        if (isLoading || loadingConversationId !== null) return
 
         persistActiveConversation(null)
         setConversationId(null)
@@ -380,7 +370,9 @@ export default function Assistant() {
                             type="button"
                             className="btn-primary"
                             onClick={handleNewChat}
-                            disabled={isLoading}
+                            disabled={
+                                isLoading || loadingConversationId !== null
+                            }
                             style={{
                                 width: '100%',
                                 justifyContent: 'center',
@@ -702,6 +694,7 @@ export default function Assistant() {
 
                             <button
                                 type="submit"
+                                aria-label="Send message"
                                 className="btn-primary"
                                 disabled={
                                     isLoading ||
