@@ -20,16 +20,43 @@ public class AssistantController {
 
     @PostMapping("/chat")
     public ApiResponse<ChatResponse> chat(@Valid @RequestBody ChatRequest request) {
-        return ApiResponse.success(assistantService.chat(currentUserProvider.getCurrentUserId(), request));
+        return ApiResponse.success(
+                assistantService.chat(
+                        currentUserProvider.getCurrentUserId(),
+                        request
+                )
+        );
     }
 
     @GetMapping("/conversations")
     public ApiResponse<List<ConversationSummaryResponse>> conversations() {
-        return ApiResponse.success(assistantService.listConversations(currentUserProvider.getCurrentUserId()));
+        return ApiResponse.success(
+                assistantService.listConversations(
+                        currentUserProvider.getCurrentUserId()
+                )
+        );
     }
 
     @GetMapping("/conversations/{id}/messages")
-    public ApiResponse<List<ChatMessageResponse>> history(@PathVariable UUID id) {
-        return ApiResponse.success(assistantService.getHistory(currentUserProvider.getCurrentUserId(), id));
+    public ApiResponse<List<ChatMessageResponse>> history(
+            @PathVariable UUID id
+    ) {
+        return ApiResponse.success(
+                assistantService.getHistory(
+                        currentUserProvider.getCurrentUserId(),
+                        id
+                )
+        );
+    }
+
+    @DeleteMapping("/conversations/{id}")
+    public ApiResponse<Void> deleteConversation(
+            @PathVariable UUID id
+    ) {
+        assistantService.deleteConversation(
+                currentUserProvider.getCurrentUserId(),
+                id
+        );
+        return ApiResponse.success(null);
     }
 }
