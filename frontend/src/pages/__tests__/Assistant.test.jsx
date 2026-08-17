@@ -137,7 +137,8 @@ describe('Assistant conversation persistence and chat management', () => {
             'Create a workflow that reads my Gmail and posts summaries to Slack...'
         )
 
-        await user.type(input, 'Start a new workflow{Enter}')
+        await user.type(input, 'Start a new workflow')
+        await user.click(screen.getByRole('button', { name: 'Send message' }))
 
         await waitFor(() => {
             expect(assistantService.chat).toHaveBeenCalledWith({
