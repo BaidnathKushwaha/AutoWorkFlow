@@ -6,5 +6,5 @@ import java.util.List;
 import java.util.UUID;
 
 public interface AssistantConversationRepository extends JpaRepository<AssistantConversation, UUID> {
-    List<AssistantConversation> findByUserIdOrderByUpdatedAtDesc(UUID userId);
+    List<AssistantConversation> findTop5ByUserIdOrderByUpdatedAtDesc(UUID userId);
 }
