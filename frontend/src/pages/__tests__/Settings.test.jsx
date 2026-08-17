@@ -13,6 +13,8 @@ import {
 } from '@testing-library/react'
 
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import Settings from '../Settings'
 import userService from '../../services/user/userService'
@@ -44,6 +46,16 @@ vi.mock(
     })
 )
 
+vi.mock(
+    'sonner',
+    () => ({
+        toast: {
+            error: vi.fn(),
+            success: vi.fn(),
+        },
+    })
+)
+
 const providers = [
     {
         key: 'openrouter',
@@ -67,6 +79,13 @@ const providers = [
         ],
     },
 ]
+
+const renderSettings = () =>
+    render(
+        <MemoryRouter>
+            <Settings />
+        </MemoryRouter>
+    )
 
 describe('Settings AI preferences', () => {
     beforeEach(() => {
@@ -92,7 +111,7 @@ describe('Settings AI preferences', () => {
     })
 
     it('renders AUTO state from backend', async () => {
-        render(<Settings />)
+        renderSettings()
 
         await waitFor(() => {
             expect(
@@ -109,7 +128,7 @@ describe('Settings AI preferences', () => {
             providers,
         })
 
-        render(<Settings />)
+        renderSettings()
 
         await waitFor(() => {
             expect(
@@ -131,10 +150,28 @@ describe('Settings AI preferences', () => {
     it('saving AUTO sends null provider and model', async () => {
         const user = userEvent.setup()
 
-        render(<Settings />)
+        userService.updateAiPreferences
+            .mockResolvedValueOnce({
+                mode: 'SPECIFIC',
+                provider: 'openrouter',
+                model: 'google/gemini-2.5-flash',
+                providers,
+            })
+            .mockResolvedValueOnce({
+                mode: 'AUTO',
+                provider: null,
+                model: null,
+                providers,
+            })
+
+        renderSettings()
 
         const mode =
             await screen.findByLabelText('AI Mode')
+
+        await waitFor(() => {
+            expect(mode).toBeEnabled()
+        })
 
         await user.selectOptions(
             mode,
@@ -176,10 +213,21 @@ describe('Settings AI preferences', () => {
     it('selecting SPECIFIC exposes provider and model', async () => {
         const user = userEvent.setup()
 
-        render(<Settings />)
+        userService.updateAiPreferences.mockResolvedValue({
+            mode: 'SPECIFIC',
+            provider: 'openrouter',
+            model: 'google/gemini-2.5-flash',
+            providers,
+        })
+
+        renderSettings()
 
         const mode =
             await screen.findByLabelText('AI Mode')
+
+        await waitFor(() => {
+            expect(mode).toBeEnabled()
+        })
 
         await user.selectOptions(
             mode,
@@ -200,10 +248,21 @@ describe('Settings AI preferences', () => {
     it('provider selection remains provider-aware', async () => {
         const user = userEvent.setup()
 
-        render(<Settings />)
+        userService.updateAiPreferences.mockResolvedValue({
+            mode: 'SPECIFIC',
+            provider: 'openrouter',
+            model: 'google/gemini-2.5-flash',
+            providers,
+        })
+
+        renderSettings()
 
         const mode =
             await screen.findByLabelText('AI Mode')
+
+        await waitFor(() => {
+            expect(mode).toBeEnabled()
+        })
 
         await user.selectOptions(
             mode,
@@ -240,10 +299,14 @@ describe('Settings AI preferences', () => {
             providers,
         })
 
-        render(<Settings />)
+        renderSettings()
 
         const mode =
             await screen.findByLabelText('AI Mode')
+
+        await waitFor(() => {
+            expect(mode).toBeEnabled()
+        })
 
         await user.selectOptions(
             mode,
@@ -276,14 +339,12 @@ describe('Settings AI preferences', () => {
             new Error('Failed to load preferences')
         )
 
-        render(<Settings />)
+        renderSettings()
 
         await waitFor(() => {
-            expect(
-                screen.getByText(
-                    'Failed to load preferences'
-                )
-            ).toBeInTheDocument()
+            expect(toast.error).toHaveBeenCalledWith(
+                'Failed to load preferences'
+            )
         })
     })
 })

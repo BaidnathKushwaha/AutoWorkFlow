@@ -25,7 +25,7 @@
 export const PROVIDER_MODELS = {
   gemini: ['gemini-3.6-flash'],
   openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  openrouter: ['openrouter/free'],
+  openrouter: ['google/gemini-2.5-flash'],
   auto: [],
 }
 
@@ -110,9 +110,9 @@ export const nodeCategories = [
 // WorkflowValidator.java on the backend uses NodeStrategyRegistry.isTriggerType()
 // (which checks the same type keys) as its authority; this mirrors that on the frontend.
 export const TRIGGER_NODE_TYPES = new Set(
-  nodeCategories
-    .find(c => c.id === 'triggers')
-    ?.nodes.map(n => n.type) ?? []
+    nodeCategories
+        .find(c => c.id === 'triggers')
+        ?.nodes.map(n => n.type) ?? []
 )
 
 // Node config schemas (what fields appear in the ConfigPanel "Parameters" tab).

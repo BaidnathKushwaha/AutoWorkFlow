@@ -1,6 +1,12 @@
 ALTER TABLE users
     ADD COLUMN ai_mode VARCHAR(20) NOT NULL DEFAULT 'AUTO';
 
+-- V6 created ai_provider as NOT NULL with the legacy "auto" sentinel.
+-- AUTO is now represented by null provider/model values, so the old constraint
+-- must be removed before normalizing existing rows.
+ALTER TABLE users
+    ALTER COLUMN ai_provider DROP NOT NULL;
+
 UPDATE users
 SET ai_mode =
         CASE
