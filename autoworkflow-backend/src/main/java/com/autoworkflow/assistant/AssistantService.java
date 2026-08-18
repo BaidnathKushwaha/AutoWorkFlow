@@ -118,13 +118,6 @@ public class AssistantService {
             }
         }
 
-        if (proposal != null) {
-            validation = workflowProposalValidator.validate(proposal);
-            if (validation.valid()) {
-                validatedWorkflowJson = convertProposalToPersistedWorkflow(proposal);
-            }
-        }
-
         AssistantMessage assistantMessage =
                 messageRepository.save(
                         AssistantMessage.builder()

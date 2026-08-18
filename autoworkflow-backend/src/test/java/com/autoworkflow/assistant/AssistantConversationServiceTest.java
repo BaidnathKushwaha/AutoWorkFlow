@@ -1,5 +1,6 @@
 package com.autoworkflow.assistant;
 
+import com.autoworkflow.assistant.dto.WorkflowProposalValidator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
