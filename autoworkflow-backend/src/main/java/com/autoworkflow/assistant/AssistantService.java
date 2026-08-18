@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.autoworkflow.assistant.dto.WorkflowProposalValidator;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -93,9 +94,29 @@ public class AssistantService {
             );
         }
 
-        WorkflowProposal proposal = parsedResponse.workflowProposal();
+        WorkflowProposal proposal =
+                parsedResponse.workflowProposal();
+
         WorkflowProposalValidation validation = null;
         JsonNode validatedWorkflowJson = null;
+        JsonNode workflowProposalJson = null;
+        JsonNode workflowProposalValidationJson = null;
+
+        if (proposal != null) {
+            validation =
+                    workflowProposalValidator.validate(proposal);
+
+            workflowProposalJson =
+                    JsonUtils.mapper().valueToTree(proposal);
+
+            workflowProposalValidationJson =
+                    JsonUtils.mapper().valueToTree(validation);
+
+            if (validation.valid()) {
+                validatedWorkflowJson =
+                        convertProposalToPersistedWorkflow(proposal);
+            }
+        }
 
         if (proposal != null) {
             validation = workflowProposalValidator.validate(proposal);
@@ -111,6 +132,10 @@ public class AssistantService {
                                 .role(MessageRole.ASSISTANT)
                                 .content(parsedResponse.answer())
                                 .generatedWorkflowJson(validatedWorkflowJson)
+                                .workflowProposalJson(workflowProposalJson)
+                                .workflowProposalValidationJson(
+                                        workflowProposalValidationJson
+                                )
                                 .build()
                 );
         touchConversation(conversation);

@@ -42,6 +42,14 @@ public class AssistantMessage {
     @Column(name = "generated_workflow_json", columnDefinition = "jsonb")
     private JsonNode generatedWorkflowJson;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "workflow_proposal_json", columnDefinition = "jsonb")
+    private JsonNode workflowProposalJson;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "workflow_proposal_validation_json", columnDefinition = "jsonb")
+    private JsonNode workflowProposalValidationJson;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;

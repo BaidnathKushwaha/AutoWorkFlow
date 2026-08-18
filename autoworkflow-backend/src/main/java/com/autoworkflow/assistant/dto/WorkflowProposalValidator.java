@@ -1,4 +1,4 @@
-package com.autoworkflow.assistant;
+package com.autoworkflow.assistant.dto;
 
 import com.autoworkflow.assistant.dto.WorkflowProposal;
 import com.autoworkflow.assistant.dto.WorkflowProposalEdge;
