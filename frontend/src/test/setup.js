@@ -1,4 +1,6 @@
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom';
+
+Element.prototype.scrollIntoView = vi.fn();
 
 // Node 26 exposes a process-level localStorage that is unavailable without a
 // --localstorage-file flag. Give jsdom tests the browser storage API that the
