@@ -23,23 +23,23 @@ export default function Signup() {
   const [isHovered, setIsHovered] = useState(false)
   const googleBtnRef = useRef(null)
 
-  const googleCredentialCallback = useRef(null)
-  googleCredentialCallback.current = async (response) => {
-    if (!response?.credential) {
-      toast.error('Google sign-up was cancelled or failed.')
-      return
-    }
-    setGoogleLoading(true)
-    try {
-      await loginWithGoogle(response.credential)
-      toast.success('Account created with Google!')
-      navigate('/dashboard')
-    } catch (err) {
-      toast.error(err.message || 'Google sign-up failed. Please try again.')
-    } finally {
-      setGoogleLoading(false)
-    }
-  }
+    const googleCredentialCallback = useCallback(async (response) => {
+        if (!response?.credential) {
+            toast.error('Google sign-up was cancelled or failed.')
+            return
+        }
+
+        setGoogleLoading(true)
+        try {
+            await loginWithGoogle(response.credential)
+            toast.success('Account created with Google!')
+            navigate('/dashboard')
+        } catch (err) {
+            toast.error(err.message || 'Google sign-up failed. Please try again.')
+        } finally {
+            setGoogleLoading(false)
+        }
+    }, [loginWithGoogle, navigate])
 
   const initGoogleButton = useCallback(() => {
     if (!window.google?.accounts?.id) return
@@ -47,7 +47,7 @@ export default function Signup() {
 
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
-      callback: (resp) => googleCredentialCallback.current(resp),
+      callback: googleCredentialCallback,
       auto_select: false,
       cancel_on_tap_outside: true,
       ux_mode: 'popup',
@@ -64,7 +64,7 @@ export default function Signup() {
         shape: 'rectangular',
       })
     }
-  }, [])
+  }, [googleCredentialCallback])
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID_HERE') return
