@@ -97,11 +97,6 @@ function ProfileSection() {
     const [email, setEmail] = useState(user?.email || '')
     const [saving, setSaving] = useState(false)
 
-    useEffect(() => {
-        setName(user?.name || '')
-        setEmail(user?.email || '')
-    }, [user?.name, user?.email])
-
     const dirty = name !== (user?.name || '') || email !== (user?.email || '')
 
     const handleSave = async () => {
@@ -193,23 +188,31 @@ function PlatformApiKeySection() {
     const [loading, setLoading] = useState(true)
     const [busy, setBusy] = useState(false)
 
-    const loadStatus = () => {
-        setLoading(true)
+    useEffect(() => {
+        let cancelled = false
 
-        userService
-            .me()
-            .then((me) => {
+        const loadStatus = async () => {
+            try {
+                const me = await userService.me()
+
+                if (cancelled) return
+
                 setHasKey(Boolean(me?.hasApiKey))
                 setLastFour(me?.apiKeyLastFour || '')
-            })
-            .catch(() => {
+            } catch {
                 // Non-fatal — the rest of Settings still works.
-            })
-            .finally(() => setLoading(false))
-    }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false)
+                }
+            }
+        }
 
-    useEffect(() => {
         loadStatus()
+
+        return () => {
+            cancelled = true
+        }
     }, [])
 
     const handleGenerate = async () => {

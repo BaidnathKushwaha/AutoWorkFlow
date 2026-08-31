@@ -1,5 +1,5 @@
 import { X, Trash2, Copy, Check, Link2, Plus } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { nodeConfigs, PROVIDER_MODELS } from '../../data/nodeTypes'
 import { toast } from 'sonner'
 import { buildWebhookUrl } from '../../utils/constants'
@@ -67,8 +67,6 @@ function resolveSelectOptions(field, currentValue, selectedNode) {
 function CaseRow({ value, onRemove, onValidateAndCommit }) {
     const [draft, setDraft] = useState(value)
 
-    useEffect(() => { setDraft(value) }, [value])
-
     const commit = () => {
         const trimmed = draft.trim()
         if (trimmed === value) return // no real change
@@ -124,7 +122,7 @@ function CaseListEditor({ value, onCommit }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {cases.map((caseValue, i) => (
                 <CaseRow
-                    key={i}
+                    key={`${i}-${caseValue}`}
                     value={caseValue}
                     onRemove={() => removeCase(i)}
                     onValidateAndCommit={(trimmed) => validateAndCommit(i, trimmed)}

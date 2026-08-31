@@ -64,7 +64,20 @@ export default function Integrations() {
     }
   }
 
-  useEffect(() => { fetchIntegrations() }, [])
+  useEffect(() => {
+    let cancelled = false
+
+    const loadIntegrations = async () => {
+      if (cancelled) return
+      await fetchIntegrations()
+    }
+
+    loadIntegrations()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Backend's OAuth callback (IntegrationController#oauthCallbackGet) redirects the
   // browser back here with ?status=success&provider=... or ?status=error&message=...
@@ -74,18 +87,30 @@ export default function Integrations() {
     const status = searchParams.get('status')
     if (!status) return
 
-    if (status === 'success') {
-      const provider = searchParams.get('provider')
-      const name = PROVIDER_METADATA[provider]?.name || provider || 'Integration'
-      toast.success(`${name} connected.`)
-      fetchIntegrations()
-    } else if (status === 'error') {
-      const message = searchParams.get('message') || 'Connection failed.'
-      toast.error(message)
+    const refreshIntegrations = async () => {
+      if (status === 'success') {
+        const provider = searchParams.get('provider')
+        const name =
+            PROVIDER_METADATA[provider]?.name ||
+            provider ||
+            'Integration'
+
+        toast.success(`${name} connected.`)
+
+        await fetchIntegrations()
+      } else if (status === 'error') {
+        const message =
+            searchParams.get('message') ||
+            'Connection failed.'
+
+        toast.error(message)
+      }
+
+      // Clear the query params so a page refresh doesn't re-show the toast.
+      setSearchParams({}, { replace: true })
     }
 
-    // Clear the query params so a page refresh doesn't re-show the toast.
-    setSearchParams({}, { replace: true })
+    refreshIntegrations()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
@@ -102,7 +127,7 @@ export default function Integrations() {
       const res = await integrationService.initiateOAuth(providerKey)
       const authUrl = res?.authorizationUrl || res?.data?.authorizationUrl
       if (!authUrl) throw new Error('Backend did not return an authorization URL.')
-      window.location.href = authUrl
+      window.location.assign(authUrl)
     } catch (err) {
       toast.error(`${meta.name} connection failed: ${err?.response?.data?.message || err?.message || 'unable to start OAuth flow.'}`)
       setBusyProvider(null)

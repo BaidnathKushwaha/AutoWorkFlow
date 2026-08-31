@@ -12,8 +12,19 @@ class AiFailureClassifierTest {
     }
 
     @Test
-    void quotaExceeded_isRetryable() {
-        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openrouter", 429, "{}"))).isTrue();
+    void quotaExceeded429_isRetryable() {
+        assertThat(AiFailureClassifier.isRetryable(
+                AiProviderException.from("openrouter", 429, "{}")
+        )).isTrue();
+    }
+
+    @Test
+    void openRouter402_isRetryable() {
+        AiProviderException exception =
+                AiProviderException.from("openrouter", 402, "{\"error\":\"payment required\"}");
+
+        assertThat(exception.getCode()).isEqualTo("QUOTA_EXCEEDED");
+        assertThat(AiFailureClassifier.isRetryable(exception)).isTrue();
     }
 
     @Test
@@ -22,23 +33,42 @@ class AiFailureClassifierTest {
     }
 
     @Test
+    void allProviderUnavailable5xxStatuses_areRetryable() {
+        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 500, "{}"))).isTrue();
+        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 502, "{}"))).isTrue();
+        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 503, "{}"))).isTrue();
+        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 504, "{}"))).isTrue();
+    }
+
+    @Test
     void authFailed_isNotRetryable() {
         assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 401, "{}"))).isFalse();
+        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 403, "{}"))).isFalse();
     }
 
     @Test
     void invalidModel_isNotRetryable() {
-        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openrouter", 400, "{\"error\":\"model not_found\"}"))).isFalse();
+        AiProviderException exception =
+                AiProviderException.from("openrouter", 400, "{\"error\":\"model not_found\"}");
+
+        assertThat(exception.getCode()).isEqualTo("INVALID_MODEL");
+        assertThat(AiFailureClassifier.isRetryable(exception)).isFalse();
     }
 
     @Test
     void genericRequestFailed4xx_isNotRetryable() {
-        assertThat(AiFailureClassifier.isRetryable(AiProviderException.from("openai", 422, "{}"))).isFalse();
+        AiProviderException exception =
+                AiProviderException.from("openai", 422, "{}");
+
+        assertThat(exception.getCode()).isEqualTo("REQUEST_FAILED");
+        assertThat(AiFailureClassifier.isRetryable(exception)).isFalse();
     }
 
     @Test
     void genericAiException_networkOrTimeoutStyle_isRetryable() {
-        assertThat(AiFailureClassifier.isRetryable(new AiException("OpenAI request failed: connection reset"))).isTrue();
+        assertThat(AiFailureClassifier.isRetryable(
+                new AiException("OpenAI request failed: connection reset")
+        )).isTrue();
     }
 
     @Test
@@ -50,11 +80,11 @@ class AiFailureClassifierTest {
 
     @Test
     void safeSummary_neverIncludesRawExceptionMessage() {
-        // safeSummary must come from a closed set of canned strings keyed by `code`,
-        // never from e.getMessage() — this test plants a "message" containing something
-        // that would be bad to leak, and asserts it never appears in the summary.
         AiProviderException withSensitiveBody = AiProviderException.from(
-                "openrouter", 429, "{\"authorization\":\"Bearer sk-super-secret-value\"}");
+                "openrouter",
+                429,
+                "{\"authorization\":\"Bearer sk-super-secret-value\"}"
+        );
 
         String summary = AiFailureClassifier.safeSummary(withSensitiveBody);
 
@@ -65,11 +95,17 @@ class AiFailureClassifierTest {
 
     @Test
     void safeSummary_coversEveryClassifiedCode() {
-        assertThat(AiFailureClassifier.safeSummary(new NoCredentialsException("x"))).isEqualTo("no credentials configured");
-        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 429, "{}"))).contains("rate limited");
-        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 401, "{}"))).contains("authentication");
-        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 400, "{\"error\":\"model not_found\"}"))).contains("model");
-        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 503, "{}"))).contains("unavailable");
-        assertThat(AiFailureClassifier.safeSummary(new AiException("network blip"))).contains("timeout or connection");
+        assertThat(AiFailureClassifier.safeSummary(new NoCredentialsException("x")))
+                .isEqualTo("no credentials configured");
+        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 429, "{}")))
+                .contains("rate limited");
+        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 401, "{}")))
+                .contains("authentication");
+        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 400, "{\"error\":\"model not_found\"}")))
+                .contains("model");
+        assertThat(AiFailureClassifier.safeSummary(AiProviderException.from("x", 503, "{}")))
+                .contains("unavailable");
+        assertThat(AiFailureClassifier.safeSummary(new AiException("network blip")))
+                .contains("timeout or connection");
     }
 }

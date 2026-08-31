@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 
 export default function Workflows() {
     const { workflows, setWorkflows, deleteWorkflow, updateWorkflow } = useWorkflowStore()
-    const [searchParams, setSearchParams] = useSearchParams()
+    const [searchParams] = useSearchParams()
     const urlSearch = searchParams.get('search') || ''
 
     const [searchQuery, setSearchQuery] = useState(urlSearch)
@@ -22,11 +22,6 @@ export default function Workflows() {
     const [viewMode, setViewMode] = useState('grid') // 'grid', 'list'
     const [isDeleting, setIsDeleting] = useState(null)
     const [copiedTokenId, setCopiedTokenId] = useState(null)
-
-    useEffect(() => {
-        const q = searchParams.get('search') || ''
-        setSearchQuery(q)
-    }, [searchParams])
 
     // Sync workflows from backend database on mount
     useEffect(() => {

@@ -23,8 +23,7 @@ export default function Login() {
   const [isHovered, setIsHovered] = useState(false)
   const googleBtnRef = useRef(null)
 
-  const googleCredentialCallback = useRef(null)
-  googleCredentialCallback.current = async (response) => {
+  const googleCredentialCallback = useCallback(async (response) => {
     if (!response?.credential) {
       toast.error('Google sign-in was cancelled or failed.')
       return
@@ -39,7 +38,7 @@ export default function Login() {
     } finally {
       setGoogleLoading(false)
     }
-  }
+  }, [loginWithGoogle, navigate])
 
   const initGoogleButton = useCallback(() => {
     if (!window.google?.accounts?.id) return
@@ -47,7 +46,7 @@ export default function Login() {
 
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
-      callback: (resp) => googleCredentialCallback.current(resp),
+      callback: googleCredentialCallback,
       auto_select: false,
       cancel_on_tap_outside: true,
       ux_mode: 'popup',
@@ -64,7 +63,7 @@ export default function Login() {
         shape: 'rectangular',
       })
     }
-  }, [])
+  }, [googleCredentialCallback])
 
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'YOUR_GOOGLE_CLIENT_ID_HERE') return
