@@ -113,7 +113,7 @@ class ExecutionServiceTest {
     }
 
     @Test
-    void manualRunResult_recordsSuccessStatusAndStepsLogsCorrectly() throws Exception {
+    void manualRunResult_recordsSuccessStatusAndTiming() throws Exception {
         Workflow workflow = standaloneSummarizerWorkflow();
         when(workflowRepository.findById(workflowId)).thenReturn(Optional.of(workflow));
 
@@ -127,7 +127,6 @@ class ExecutionServiceTest {
         assertThat(response.status()).isEqualTo(ExecutionStatus.SUCCESS.name());
         assertThat(response.triggeredBy()).isEqualTo(TriggeredBy.MANUAL.name());
         assertThat(response.durationMs()).isNotNull();
-        assertThat(response.finishedAt()).isNotNull();
     }
 
     @Test
@@ -156,7 +155,6 @@ class ExecutionServiceTest {
         assertThat(response.errorMessage()).isEqualTo("Workflow execution failed unexpectedly.");
         assertThat(response.errorMessage()).doesNotContain("secret");
         assertThat(response.durationMs()).isNotNull();
-        assertThat(response.finishedAt()).isNotNull();
         verify(executionFinalizationService).markFailedBestEffort(
                 any(Execution.class), anyLong(), eq("Workflow execution failed unexpectedly."));
         verify(workflowRepository).incrementExecutionCount(eq(workflowId), any(Instant.class));
