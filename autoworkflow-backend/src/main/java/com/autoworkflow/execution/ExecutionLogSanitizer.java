@@ -38,7 +38,7 @@ public final class ExecutionLogSanitizer {
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> field = fields.next();
                 if (isSensitiveKey(field.getKey())) {
-                    field.setValue(copy.textNode(REDACTED));
+                    copy.put(field.getKey(), REDACTED);
                 } else {
                     field.setValue(sanitizeNode(field.getValue()));
                 }
