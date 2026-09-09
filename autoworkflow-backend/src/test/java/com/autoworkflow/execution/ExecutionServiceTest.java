@@ -130,6 +130,31 @@ class ExecutionServiceTest {
     }
 
     @Test
+    void executionStepPayloads_areSanitizedBeforePersistence() throws Exception {
+        Workflow workflow = standaloneSummarizerWorkflow();
+        when(workflowRepository.findById(workflowId)).thenReturn(Optional.of(workflow));
+
+        JsonNode input = JsonUtils.mapper().readTree("{\"name\":\"John\",\"headers\":{\"Authorization\":\"Bearer abc\",\"Content-Type\":\"application/json\"},\"apiKey\":\"key\"}");
+        JsonNode output = JsonUtils.mapper().readTree("{\"token\":\"oauth-token\",\"result\":\"safe\"}");
+        LogStep step = new LogStep("node-1", "HTTP", "success", Instant.now(), Instant.now(),
+                input, output, null, 5L);
+        when(workflowExecutor.run(any(), any(), any(), any(), any(), any()))
+                .thenReturn(WorkflowExecutor.ExecutionRunResult.success(List.of(step), output));
+
+        service.execute(workflowId, TriggeredBy.MANUAL, null);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(Execution.class);
+        verify(executionRepository, times(2)).save(captor.capture());
+        JsonNode persistedSteps = captor.getAllValues().get(1).getStepsLogs();
+
+        assertThat(persistedSteps.at("/0/inputPayload/headers/Authorization").asText()).isEqualTo("[REDACTED]");
+        assertThat(persistedSteps.at("/0/inputPayload/headers/Content-Type").asText()).isEqualTo("application/json");
+        assertThat(persistedSteps.at("/0/inputPayload/apiKey").asText()).isEqualTo("[REDACTED]");
+        assertThat(persistedSteps.at("/0/outputPayload/token").asText()).isEqualTo("[REDACTED]");
+        assertThat(persistedSteps.at("/0/outputPayload/result").asText()).isEqualTo("safe");
+    }
+
+    @Test
     void manualRunFailure_recordsFailedStatus_doesNotThrowRawException() throws Exception {
         Workflow workflow = standaloneSummarizerWorkflow();
         when(workflowRepository.findById(workflowId)).thenReturn(Optional.of(workflow));
