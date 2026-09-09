@@ -81,8 +81,6 @@ public class ExecutionService {
                         execution.setFinishedAt(Instant.now());
                         execution = executionRepository.save(execution);
 
-                        // The workflow execution itself is terminal before the aggregate
-                        // counter is updated. A counter failure must not rewrite SUCCESS/FAILED.
                         try {
                                 workflowRepository.incrementExecutionCount(workflow.getId(), Instant.now());
                         } catch (Exception e) {
@@ -111,8 +109,6 @@ public class ExecutionService {
                                 }
                         }
 
-                        // Do not leak exception messages, types, stack traces, provider
-                        // responses, or credentials to the API when the engine itself fails.
                         execution.setStatus(ExecutionStatus.FAILED);
                         execution.setDurationMs(durationMs);
                         execution.setFinishedAt(Instant.now());
@@ -153,7 +149,13 @@ public class ExecutionService {
                 String wfName = workflowRepository.findById(workflowId)
                                 .map(Workflow::getName)
                                 .orElse("Unknown Workflow");
-                return new PageResponse<>(executionRepository.findByWorkflowIdOrderByStartedAtDesc(workflowId, pageable));
+                return new PageResponse<>(executionRepository.findByWorkflowIdOrderByStartedAtDesc(workflowId, pageable)
+                                .map(e -> {
+                                        String workflowName = workflowRepository.findById(e.getWorkflowId())
+                                                        .map(Workflow::getName)
+                                                        .orElse(wfName);
+                                        return ExecutionResponse.from(e, workflowName);
+                                }));
         }
 
         public ExecutionDetailResponse getDetail(UUID userId, UUID executionId) {
