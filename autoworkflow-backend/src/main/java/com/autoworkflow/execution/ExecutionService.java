@@ -29,10 +29,13 @@ import java.util.UUID;
 @Slf4j
 public class ExecutionService {
 
+        private static final String SAFE_UNEXPECTED_ERROR = "Workflow execution failed unexpectedly.";
+
         private final ExecutionRepository executionRepository;
         private final WorkflowRepository workflowRepository;
         private final WorkflowExecutor workflowExecutor;
         private final com.autoworkflow.execution.validation.WorkflowValidator workflowValidator;
+        private final ExecutionFinalizationService executionFinalizationService;
 
         /**
          * Runs a workflow synchronously end-to-end and persists the result.
@@ -65,27 +68,64 @@ public class ExecutionService {
                 Instant start = Instant.now();
                 JsonNode payload = triggerPayload != null ? triggerPayload : JsonUtils.mapper().createObjectNode();
 
-                WorkflowExecutor.ExecutionRunResult result = workflowExecutor.run(
-                                workflow.getUserId(), workflow.getId(), execution.getId(),
-                                workflow.getCanvasNodes(), workflow.getCanvasEdges(), payload);
+                try {
+                        WorkflowExecutor.ExecutionRunResult result = workflowExecutor.run(
+                                        workflow.getUserId(), workflow.getId(), execution.getId(),
+                                        workflow.getCanvasNodes(), workflow.getCanvasEdges(), payload);
 
-                long durationMs = Instant.now().toEpochMilli() - start.toEpochMilli();
+                        long durationMs = Instant.now().toEpochMilli() - start.toEpochMilli();
 
-                execution.setStatus(result.success() ? ExecutionStatus.SUCCESS : ExecutionStatus.FAILED);
-                execution.setStepsLogs(stepsToJson(result.steps()));
-                execution.setErrorMessage(result.error());
-                execution.setDurationMs(durationMs);
-                execution.setFinishedAt(Instant.now());
-                execution = executionRepository.save(execution);
+                        execution.setStatus(result.success() ? ExecutionStatus.SUCCESS : ExecutionStatus.FAILED);
+                        execution.setStepsLogs(stepsToJson(result.steps()));
+                        execution.setErrorMessage(result.error());
+                        execution.setDurationMs(durationMs);
+                        execution.setFinishedAt(Instant.now());
+                        execution = executionRepository.save(execution);
 
-                workflowRepository.incrementExecutionCount(workflow.getId(), Instant.now());
+                        // The execution is already terminal at this point. A failure while
+                        // updating the aggregate counter must not turn a successful workflow
+                        // execution into FAILED or leave it RUNNING.
+                        try {
+                                workflowRepository.incrementExecutionCount(workflow.getId(), Instant.now());
+                        } catch (Exception e) {
+                                log.error("Execution completed but workflow execution count update failed", e);
+                        }
 
-                return ExecutionResponse.from(execution, workflow.getName());
+                        return ExecutionResponse.from(execution, workflow.getName());
+                } catch (Exception e) {
+                        long durationMs = Instant.now().toEpochMilli() - start.toEpochMilli();
+                        try {
+                                executionFinalizationService.markFailedBestEffort(
+                                                execution,
+                                                durationMs,
+                                                SAFE_UNEXPECTED_ERROR);
+                        } catch (Exception finalizationException) {
+                                log.error("Failed to finalize unexpected workflow execution failure", finalizationException);
+                        }
+
+                        // Do not leak exception messages, types, stack traces, provider
+                        // responses, or credentials to the API when the engine itself fails.
+                        execution.setStatus(ExecutionStatus.FAILED);
+                        execution.setDurationMs(durationMs);
+                        execution.setFinishedAt(Instant.now());
+                        execution.setErrorMessage(SAFE_UNEXPECTED_ERROR);
+                        return ExecutionResponse.from(execution, workflow.getName());
+                }
         }
 
         private JsonNode stepsToJson(List<LogStep> steps) {
                 var array = JsonUtils.mapper().createArrayNode();
-                steps.forEach(step -> array.add(JsonUtils.mapper().valueToTree(step)));
+                steps.forEach(step -> array.add(JsonUtils.mapper().valueToTree(
+                                new LogStep(
+                                                step.getNodeId(),
+                                                step.getNodeName(),
+                                                step.getStatus(),
+                                                step.getStartTime(),
+                                                step.getEndTime(),
+                                                ExecutionLogSanitizer.sanitize(step.getInputPayload()),
+                                                ExecutionLogSanitizer.sanitize(step.getOutputPayload()),
+                                                step.getError(),
+                                                step.getDurationMs()))));
                 return array;
         }
 
