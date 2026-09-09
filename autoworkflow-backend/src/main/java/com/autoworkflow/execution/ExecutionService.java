@@ -49,8 +49,7 @@ public class ExecutionService {
 
                 if (triggeredBy == TriggeredBy.MANUAL) {
                         workflowValidator.validateExecutionOrThrow(
-                                        workflow.getCanvasNodes(),
-                                        workflow.getCanvasEdges());
+                                        workflow.getCanvasNodes(), workflow.getCanvasEdges());
                 } else {
                         workflowValidator.validateDeploymentOrThrow(workflow);
                 }
@@ -82,9 +81,8 @@ public class ExecutionService {
                         execution.setFinishedAt(Instant.now());
                         execution = executionRepository.save(execution);
 
-                        // The execution is already terminal at this point. A failure while
-                        // updating the aggregate counter must not turn a successful workflow
-                        // execution into FAILED or leave it RUNNING.
+                        // The workflow execution itself is terminal before the aggregate
+                        // counter is updated. A counter failure must not rewrite SUCCESS/FAILED.
                         try {
                                 workflowRepository.incrementExecutionCount(workflow.getId(), Instant.now());
                         } catch (Exception e) {
@@ -94,13 +92,23 @@ public class ExecutionService {
                         return ExecutionResponse.from(execution, workflow.getName());
                 } catch (Exception e) {
                         long durationMs = Instant.now().toEpochMilli() - start.toEpochMilli();
+                        boolean finalized = false;
                         try {
                                 executionFinalizationService.markFailedBestEffort(
                                                 execution,
                                                 durationMs,
                                                 SAFE_UNEXPECTED_ERROR);
+                                finalized = true;
                         } catch (Exception finalizationException) {
                                 log.error("Failed to finalize unexpected workflow execution failure", finalizationException);
+                        }
+
+                        if (finalized) {
+                                try {
+                                        workflowRepository.incrementExecutionCount(workflow.getId(), Instant.now());
+                                } catch (Exception countException) {
+                                        log.error("Execution failed and finalized, but execution count update failed", countException);
+                                }
                         }
 
                         // Do not leak exception messages, types, stack traces, provider
@@ -145,8 +153,7 @@ public class ExecutionService {
                 String wfName = workflowRepository.findById(workflowId)
                                 .map(Workflow::getName)
                                 .orElse("Unknown Workflow");
-                return new PageResponse<>(executionRepository.findByWorkflowIdOrderByStartedAtDesc(workflowId, pageable)
-                                .map(e -> ExecutionResponse.from(e, wfName)));
+                return new PageResponse<>(executionRepository.findByWorkflowIdOrderByStartedAtDesc(workflowId, pageable));
         }
 
         public ExecutionDetailResponse getDetail(UUID userId, UUID executionId) {
