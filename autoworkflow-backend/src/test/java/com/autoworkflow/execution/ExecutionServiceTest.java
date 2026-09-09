@@ -22,18 +22,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/**
- * Phase 10: ExecutionService.execute() (used by manual Run, webhooks, and the cron
- * scheduler alike) must validate with validateForExecution — NOT validateForDeployment
- * — so a trigger-less workflow (e.g. a standalone Summarizer) can still run manually.
- * Also covers scenario H: execution history is never overwritten/deleted, only added to.
- */
 class ExecutionServiceTest {
 
     private ExecutionRepository executionRepository;
     private WorkflowRepository workflowRepository;
     private WorkflowExecutor workflowExecutor;
     private WorkflowValidator workflowValidator;
+    private ExecutionFinalizationService executionFinalizationService;
     private ExecutionService service;
 
     private final UUID userId = UUID.randomUUID();
@@ -45,7 +40,14 @@ class ExecutionServiceTest {
         workflowRepository = mock(WorkflowRepository.class);
         workflowExecutor = mock(WorkflowExecutor.class);
         workflowValidator = mock(WorkflowValidator.class);
-        service = new ExecutionService(executionRepository, workflowRepository, workflowExecutor, workflowValidator);
+        executionFinalizationService = mock(ExecutionFinalizationService.class);
+        service = new ExecutionService(
+                executionRepository,
+                workflowRepository,
+                workflowExecutor,
+                workflowValidator,
+                executionFinalizationService
+        );
 
         when(executionRepository.save(any(Execution.class))).thenAnswer(inv -> {
             Execution e = inv.getArgument(0);
@@ -73,59 +75,23 @@ class ExecutionServiceTest {
         service.execute(workflowId, TriggeredBy.MANUAL, null);
 
         verify(workflowValidator).validateExecutionOrThrow(workflow.getCanvasNodes(), workflow.getCanvasEdges());
-        verify(workflowValidator, never()).validateDeploymentOrThrow(any(), any());
+        verify(workflowValidator, never()).validateDeploymentOrThrow(any(Workflow.class));
         verify(workflowValidator, never()).validateOrThrow(any(), any());
     }
 
     @Test
-    void webhookAndScheduleTriggeredExecutions_useDeploymentValidation()
-            throws Exception {
+    void webhookAndScheduleTriggeredExecutions_useDeploymentValidation() throws Exception {
+        Workflow workflow = standaloneSummarizerWorkflow();
+        when(workflowRepository.findById(workflowId)).thenReturn(Optional.of(workflow));
+        when(workflowExecutor.run(any(), any(), any(), any(), any(), any()))
+                .thenReturn(WorkflowExecutor.ExecutionRunResult.success(
+                        List.of(), JsonUtils.mapper().createObjectNode()));
 
-        Workflow workflow =
-                standaloneSummarizerWorkflow();
+        service.execute(workflowId, TriggeredBy.WEBHOOK, JsonUtils.mapper().createObjectNode());
+        service.execute(workflowId, TriggeredBy.SCHEDULE, JsonUtils.mapper().createObjectNode());
 
-        when(workflowRepository.findById(workflowId))
-                .thenReturn(Optional.of(workflow));
-
-        when(workflowExecutor.run(
-                any(),
-                any(),
-                any(),
-                any(),
-                any(),
-                any()
-        )).thenReturn(
-                WorkflowExecutor.ExecutionRunResult.success(
-                        List.of(),
-                        JsonUtils.mapper()
-                                .createObjectNode()
-                )
-        );
-
-        service.execute(
-                workflowId,
-                TriggeredBy.WEBHOOK,
-                JsonUtils.mapper()
-                        .createObjectNode()
-        );
-
-        service.execute(
-                workflowId,
-                TriggeredBy.SCHEDULE,
-                JsonUtils.mapper()
-                        .createObjectNode()
-        );
-
-        verify(workflowValidator, times(2))
-                .validateDeploymentOrThrow(
-                        any(Workflow.class)
-                );
-
-        verify(workflowValidator, never())
-                .validateExecutionOrThrow(
-                        any(),
-                        any()
-                );
+        verify(workflowValidator, times(2)).validateDeploymentOrThrow(any(Workflow.class));
+        verify(workflowValidator, never()).validateExecutionOrThrow(any(), any());
     }
 
     @Test
@@ -140,11 +106,10 @@ class ExecutionServiceTest {
         ExecutionResponse second = service.execute(workflowId, TriggeredBy.MANUAL, null);
 
         assertThat(first.id()).isNotEqualTo(second.id());
-        // Two independent runs -> two persisted rows (save called for each: once to create
-        // RUNNING, once to update to a final status — 2 executions x 2 saves = 4 total).
         verify(executionRepository, times(4)).save(any(Execution.class));
         verify(executionRepository, never()).delete(any());
         verify(executionRepository, never()).deleteById(any());
+        verify(workflowRepository, times(2)).incrementExecutionCount(eq(workflowId), any(Instant.class));
     }
 
     @Test
@@ -161,6 +126,8 @@ class ExecutionServiceTest {
 
         assertThat(response.status()).isEqualTo(ExecutionStatus.SUCCESS.name());
         assertThat(response.triggeredBy()).isEqualTo(TriggeredBy.MANUAL.name());
+        assertThat(response.durationMs()).isNotNull();
+        assertThat(response.finishedAt()).isNotNull();
     }
 
     @Test
@@ -174,5 +141,24 @@ class ExecutionServiceTest {
 
         assertThat(response.status()).isEqualTo(ExecutionStatus.FAILED.name());
         assertThat(response.errorMessage()).contains("no text found");
+    }
+
+    @Test
+    void unexpectedExecutorException_finalizesAsFailedWithSafeError() throws Exception {
+        Workflow workflow = standaloneSummarizerWorkflow();
+        when(workflowRepository.findById(workflowId)).thenReturn(Optional.of(workflow));
+        when(workflowExecutor.run(any(), any(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("provider secret and stack trace should not escape"));
+
+        ExecutionResponse response = service.execute(workflowId, TriggeredBy.MANUAL, null);
+
+        assertThat(response.status()).isEqualTo(ExecutionStatus.FAILED.name());
+        assertThat(response.errorMessage()).isEqualTo("Workflow execution failed unexpectedly.");
+        assertThat(response.errorMessage()).doesNotContain("secret");
+        assertThat(response.durationMs()).isNotNull();
+        assertThat(response.finishedAt()).isNotNull();
+        verify(executionFinalizationService).markFailedBestEffort(
+                any(Execution.class), anyLong(), eq("Workflow execution failed unexpectedly."));
+        verify(workflowRepository).incrementExecutionCount(eq(workflowId), any(Instant.class));
     }
 }
