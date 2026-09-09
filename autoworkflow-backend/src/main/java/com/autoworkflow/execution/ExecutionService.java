@@ -37,11 +37,6 @@ public class ExecutionService {
         private final com.autoworkflow.execution.validation.WorkflowValidator workflowValidator;
         private final ExecutionFinalizationService executionFinalizationService;
 
-        /**
-         * Runs a workflow synchronously end-to-end and persists the result.
-         * Called from: manual "Run"/"trigger" button, webhook receiver, and the cron
-         * scheduler.
-         */
         @Transactional
         public ExecutionResponse execute(UUID workflowId, TriggeredBy triggeredBy, JsonNode triggerPayload) {
                 Workflow workflow = workflowRepository.findById(workflowId)
@@ -150,12 +145,7 @@ public class ExecutionService {
                                 .map(Workflow::getName)
                                 .orElse("Unknown Workflow");
                 return new PageResponse<>(executionRepository.findByWorkflowIdOrderByStartedAtDesc(workflowId, pageable)
-                                .map(e -> {
-                                        String workflowName = workflowRepository.findById(e.getWorkflowId())
-                                                        .map(Workflow::getName)
-                                                        .orElse(wfName);
-                                        return ExecutionResponse.from(e, workflowName);
-                                }));
+                                .map(e -> ExecutionResponse.from(e, wfName)));
         }
 
         public ExecutionDetailResponse getDetail(UUID userId, UUID executionId) {
