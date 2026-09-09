@@ -143,6 +143,10 @@ export const nodeConfigs = {
       { key: 'subjectFilter', label: 'Subject contains (filter, optional)', type: 'text', placeholder: 'Invoice' },
     ],
   },
+  // Config for the GitHub Event TRIGGER (fires the workflow on push/PR/etc).
+  // Distinct from `github` below, which is the GitHub INTEGRATION action node
+  // (create issue/PR/comment) — these two node types were previously conflated
+  // under one "github" config key even though only the trigger used these fields.
   github_event: {
     fields: [
       { key: 'repo', label: 'Repository', type: 'text', placeholder: 'owner/repo-name' },
@@ -176,6 +180,11 @@ export const nodeConfigs = {
       { key: 'value', label: 'Expected Value', type: 'text', placeholder: 'success' },
     ],
   },
+  // Matches config.field's value in the input payload against config.cases (compared
+  // as strings) and follows only the outgoing edge whose sourceHandle/edge.data.branch
+  // equals the matched case — see SwitchStrategy.java / WorkflowExecutor's branchKey
+  // handling. `cases` also drives the node's dynamic per-case output handles (see
+  // NodeWrapper.jsx) — each case becomes one labeled output.
   switch: {
     fields: [
       { key: 'field', label: 'Field to Match', type: 'text', placeholder: 'match', description: 'Field in the input payload to compare against each case below' },
@@ -191,6 +200,7 @@ export const nodeConfigs = {
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
     ],
   },
+  // GitHub INTEGRATION action node (create issue / PR / comment) — see github_event above for the trigger.
   github: {
     fields: [
       { key: 'repo', label: 'Repository (owner/repo)', type: 'text', placeholder: 'owner/repo-name' },
@@ -215,10 +225,77 @@ export const nodeConfigs = {
     fields: [
       { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini', description: 'Which connected AI provider runs this node' },
       { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash', description: 'Options depend on the AI Provider selected above' },
-      { key: 'categories', label: 'Categories', type: 'textarea', placeholder: 'billing, support, sales' },
-      { key: 'inputText', label: 'Direct Input Text (Optional)', type: 'textarea', placeholder: 'Enter text to classify directly here...' },
-      { key: 'textField', label: 'Payload Field to Classify', type: 'text', placeholder: 'text' },
+      { key: 'labels', label: 'Labels', type: 'tags', placeholder: 'support, sales, spam, other', description: 'Comma-separated labels the classifier can choose from' },
+      { key: 'textField', label: 'Payload Field to Classify', type: 'text', placeholder: 'text', description: 'Field in input payload to classify' },
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  ai_router: {
+    fields: [
+      { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini', description: 'Which connected AI provider runs this node' },
+      { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash', description: 'Options depend on the AI Provider selected above' },
+      { key: 'branches', label: 'Branches', type: 'tags', placeholder: 'urgent, normal', description: 'Comma-separated options the router can choose between (first = "true" branch)' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  gmail: {
+    fields: [
+      { key: 'action', label: 'Action', type: 'select', options: ['send', 'read'] },
+      { key: 'to', label: 'Recipient Email', type: 'text', placeholder: 'user@example.com' },
+      { key: 'subject', label: 'Subject', type: 'text', placeholder: 'Notification' },
+      { key: 'body', label: 'Body', type: 'textarea', placeholder: 'Hello from AutoWorkflow...' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  notion: {
+    fields: [
+      { key: 'action', label: 'Action', type: 'select', options: ['create_page', 'update_page'] },
+      { key: 'databaseId', label: 'Database ID', type: 'text', placeholder: 'Enter Database ID' },
+      { key: 'content', label: 'Page Content', type: 'textarea', placeholder: 'Content...' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  google_sheets: {
+    fields: [
+      { key: 'spreadsheetId', label: 'Spreadsheet ID', type: 'text', placeholder: 'Spreadsheet ID' },
+      { key: 'range', label: 'Range', type: 'text', placeholder: 'Sheet1!A1:D10' },
+      { key: 'values', label: 'Values (JSON)', type: 'textarea', placeholder: '[["Col1", "Col2"]]' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  discord: {
+    fields: [
+      { key: 'message', label: 'Message', type: 'textarea', placeholder: 'Discord message content...' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  send_email: {
+    fields: [
+      { key: 'to', label: 'Recipient Email', type: 'text', placeholder: 'user@example.com' },
+      { key: 'subject', label: 'Subject', type: 'text', placeholder: 'Alert' },
+      { key: 'body', label: 'Body', type: 'textarea', placeholder: 'Email content...' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  sms: {
+    fields: [
+      { key: 'to', label: 'Phone Number', type: 'text', placeholder: '+1234567890' },
+      { key: 'message', label: 'SMS Body', type: 'textarea', placeholder: 'SMS text alert' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  database: {
+    fields: [
+      { key: 'query', label: 'SQL Query', type: 'textarea', placeholder: 'SELECT * FROM table...' },
+      { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
+    ],
+  },
+  // Safe, no-code field mapping — see TransformStrategy.java for the exact contract.
+  // Each row: { output: "repo", source: "repository.full_name", strip: "" }.
+  // `source` supports dot-paths with numeric array indices (e.g. "commits.0.message").
+  transform: {
+    fields: [
+      { key: 'mappings', label: 'Field Mappings', type: 'mapping-editor', description: 'Map fields from the input payload to a new output shape. Leave empty to pass the input through unchanged.' },
     ],
   },
 }
