@@ -3,6 +3,7 @@ package com.autoworkflow.execution;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 
 import java.util.Iterator;
 import java.util.Locale;
@@ -38,7 +39,7 @@ public final class ExecutionLogSanitizer {
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> field = fields.next();
                 if (isSensitiveKey(field.getKey())) {
-                    copy.put(field.getKey(), REDACTED);
+                    field.setValue(TextNode.valueOf(REDACTED));
                 } else {
                     field.setValue(sanitizeNode(field.getValue()));
                 }
