@@ -13,10 +13,12 @@ import static org.mockito.Mockito.when;
 
 class AiPreferenceServicePhase1ContractTest {
 
+    private static final String CURATED_OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+
     @Test
     void autoUpdate_clearsProviderAndModel() {
         UUID userId = UUID.randomUUID();
-        User user = user(userId, AiMode.SPECIFIC, "openrouter", "google/gemini-2.5-flash");
+        User user = user(userId, AiMode.SPECIFIC, "openrouter", CURATED_OPENROUTER_MODEL);
         UserRepository repository = mock(UserRepository.class);
         when(repository.findById(userId)).thenReturn(java.util.Optional.of(user));
 
@@ -70,22 +72,22 @@ class AiPreferenceServicePhase1ContractTest {
                 new com.autoworkflow.user.dto.AiPreferenceUpdateRequest(
                         AiMode.SPECIFIC,
                         "openrouter",
-                        "google/gemini-2.5-flash"
+                        CURATED_OPENROUTER_MODEL
                 )
         );
 
         assertThat(response.mode()).isEqualTo(AiMode.SPECIFIC);
         assertThat(response.provider()).isEqualTo("openrouter");
-        assertThat(response.model()).isEqualTo("google/gemini-2.5-flash");
+        assertThat(response.model()).isEqualTo(CURATED_OPENROUTER_MODEL);
         assertThat(user.getAiProvider()).isEqualTo("openrouter");
-        assertThat(user.getAiModel()).isEqualTo("google/gemini-2.5-flash");
+        assertThat(user.getAiModel()).isEqualTo(CURATED_OPENROUTER_MODEL);
     }
 
     @Test
     void autoResolution_returnsNullProviderAndModel() {
         UUID userId = UUID.randomUUID();
         UserRepository repository = mock(UserRepository.class);
-        when(repository.findById(userId)).thenReturn(java.util.Optional.of(user(userId, AiMode.AUTO, "openrouter", "google/gemini-2.5-flash")));
+        when(repository.findById(userId)).thenReturn(java.util.Optional.of(user(userId, AiMode.AUTO, "openrouter", CURATED_OPENROUTER_MODEL)));
 
         AiPreferenceService service = new AiPreferenceService(repository);
         var resolved = service.resolveForUser(userId);

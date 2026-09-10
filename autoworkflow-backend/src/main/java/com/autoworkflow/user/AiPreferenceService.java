@@ -18,7 +18,13 @@ public class AiPreferenceService {
 
     private static final Map<String, List<String>> SUPPORTED_MODELS = Map.of(
             "openrouter",
-            List.of("google/gemini-2.5-flash"),
+            List.of(
+                    "nvidia/nemotron-3-super-120b-a12b:free",
+                    "google/gemma-4-31b-it:free",
+                    "google/gemma-4-26b-a4b-it:free",
+                    "nvidia/nemotron-3-ultra-550b-a55b:free",
+                    "cohere/north-mini-code:free"
+            ),
 
             "gemini",
             List.of("gemini-3.6-flash"),
@@ -51,48 +57,29 @@ public class AiPreferenceService {
         }
 
         if (mode == AiMode.AUTO) {
-            return response(
-                    AiMode.AUTO,
-                    null,
-                    null
-            );
+            return response(AiMode.AUTO, null, null);
         }
 
         String provider = normalizeProvider(user.getAiProvider());
         String model = validateModel(provider, user.getAiModel());
 
-        return response(
-                AiMode.SPECIFIC,
-                provider,
-                model
-        );
+        return response(AiMode.SPECIFIC, provider, model);
     }
 
     @Transactional
-    public AiPreferenceResponse update(
-            UUID userId,
-            AiPreferenceUpdateRequest request
-    ) {
+    public AiPreferenceResponse update(UUID userId, AiPreferenceUpdateRequest request) {
         User user = getUser(userId);
 
         if (request == null || request.mode() == null) {
-            throw new InvalidAiPreferenceException(
-                    "AI mode is required"
-            );
+            throw new InvalidAiPreferenceException("AI mode is required");
         }
 
         if (request.mode() == AiMode.AUTO) {
             user.setAiMode(AiMode.AUTO);
             user.setAiProvider(null);
             user.setAiModel(null);
-
             userRepository.save(user);
-
-            return response(
-                    AiMode.AUTO,
-                    null,
-                    null
-            );
+            return response(AiMode.AUTO, null, null);
         }
 
         String provider = normalizeProvider(request.provider());
@@ -101,14 +88,9 @@ public class AiPreferenceService {
         user.setAiMode(AiMode.SPECIFIC);
         user.setAiProvider(provider);
         user.setAiModel(model);
-
         userRepository.save(user);
 
-        return response(
-                AiMode.SPECIFIC,
-                provider,
-                model
-        );
+        return response(AiMode.SPECIFIC, provider, model);
     }
 
     @Transactional(readOnly = true)
@@ -118,7 +100,6 @@ public class AiPreferenceService {
         }
 
         User user = getUser(userId);
-
         AiMode mode = user.getAiMode();
 
         if (mode == null || mode == AiMode.AUTO) {
@@ -128,113 +109,55 @@ public class AiPreferenceService {
         String provider = normalizeProvider(user.getAiProvider());
         String model = validateModel(provider, user.getAiModel());
 
-        return new ResolvedPreference(
-                AiMode.SPECIFIC,
-                provider,
-                model
-        );
+        return new ResolvedPreference(AiMode.SPECIFIC, provider, model);
     }
 
     private User getUser(UUID userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() ->
-                        ResourceNotFoundException.of(
-                                "User",
-                                userId
-                        )
-                );
+                .orElseThrow(() -> ResourceNotFoundException.of("User", userId));
     }
 
     private String normalizeProvider(String provider) {
         if (provider == null || provider.isBlank()) {
-            throw new InvalidAiPreferenceException(
-                    "AI provider is required for SPECIFIC mode"
-            );
+            throw new InvalidAiPreferenceException("AI provider is required for SPECIFIC mode");
         }
 
         String normalized = provider.trim().toLowerCase();
-
         if (!SUPPORTED_MODELS.containsKey(normalized)) {
-            throw new InvalidAiPreferenceException(
-                    "Unsupported AI provider: " + provider
-            );
+            throw new InvalidAiPreferenceException("Unsupported AI provider: " + provider);
         }
-
         return normalized;
     }
 
-    private String validateModel(
-            String provider,
-            String model
-    ) {
+    private String validateModel(String provider, String model) {
         if (model == null || model.isBlank()) {
-            throw new InvalidAiPreferenceException(
-                    "AI model is required for SPECIFIC mode"
-            );
+            throw new InvalidAiPreferenceException("AI model is required for SPECIFIC mode");
         }
 
         String normalized = model.trim();
-
-        if (!SUPPORTED_MODELS
-                .get(provider)
-                .contains(normalized)) {
-
+        if (!SUPPORTED_MODELS.get(provider).contains(normalized)) {
             throw new InvalidAiPreferenceException(
-                    "Unsupported AI model '"
-                            + model
-                            + "' for provider '"
-                            + provider
-                            + "'"
-            );
+                    "Unsupported AI model '" + model + "' for provider '" + provider + "'");
         }
-
         return normalized;
     }
 
-    private AiPreferenceResponse response(
-            AiMode mode,
-            String provider,
-            String model
-    ) {
-        List<AiPreferenceResponse.ProviderOption> providers =
-                List.of(
-                        new AiPreferenceResponse.ProviderOption(
-                                "openrouter",
-                                PROVIDER_LABELS.get("openrouter"),
-                                SUPPORTED_MODELS.get("openrouter")
-                        ),
-                        new AiPreferenceResponse.ProviderOption(
-                                "gemini",
-                                PROVIDER_LABELS.get("gemini"),
-                                SUPPORTED_MODELS.get("gemini")
-                        ),
-                        new AiPreferenceResponse.ProviderOption(
-                                "openai",
-                                PROVIDER_LABELS.get("openai"),
-                                SUPPORTED_MODELS.get("openai")
-                        )
-                );
-
-        return new AiPreferenceResponse(
-                mode,
-                provider,
-                model,
-                providers
+    private AiPreferenceResponse response(AiMode mode, String provider, String model) {
+        List<AiPreferenceResponse.ProviderOption> providers = List.of(
+                new AiPreferenceResponse.ProviderOption(
+                        "openrouter", PROVIDER_LABELS.get("openrouter"), SUPPORTED_MODELS.get("openrouter")),
+                new AiPreferenceResponse.ProviderOption(
+                        "gemini", PROVIDER_LABELS.get("gemini"), SUPPORTED_MODELS.get("gemini")),
+                new AiPreferenceResponse.ProviderOption(
+                        "openai", PROVIDER_LABELS.get("openai"), SUPPORTED_MODELS.get("openai"))
         );
+
+        return new AiPreferenceResponse(mode, provider, model, providers);
     }
 
-    public record ResolvedPreference(
-            AiMode mode,
-            String provider,
-            String model
-    ) {
-
+    public record ResolvedPreference(AiMode mode, String provider, String model) {
         public static ResolvedPreference auto() {
-            return new ResolvedPreference(
-                    AiMode.AUTO,
-                    null,
-                    null
-            );
+            return new ResolvedPreference(AiMode.AUTO, null, null);
         }
     }
 }

@@ -4,8 +4,8 @@ import com.autoworkflow.common.exception.InvalidAiPreferenceException;
 import com.autoworkflow.user.dto.AiPreferenceUpdateRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -14,6 +14,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class AiPreferenceServiceTest {
+
+    private static final List<String> CURATED_OPENROUTER_MODELS = List.of(
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "google/gemma-4-31b-it:free",
+            "google/gemma-4-26b-a4b-it:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "cohere/north-mini-code:free"
+    );
 
     private UserRepository userRepository;
     private AiPreferenceService service;
@@ -43,112 +51,94 @@ class AiPreferenceServiceTest {
 
     @Test
     void newUserPreference_defaultsToAuto() {
-        AiPreferenceService.ResolvedPreference result =
-                service.resolveForUser(userId);
+        AiPreferenceService.ResolvedPreference result = service.resolveForUser(userId);
 
-        assertThat(result.mode())
-                .isEqualTo(AiMode.AUTO);
-
-        assertThat(result.provider())
-                .isNull();
-
-        assertThat(result.model())
-                .isNull();
+        assertThat(result.mode()).isEqualTo(AiMode.AUTO);
+        assertThat(result.provider()).isNull();
+        assertThat(result.model()).isNull();
     }
 
     @Test
     void specificPreference_persistsAndResolvesExactSelection() {
-        AiPreferenceUpdateRequest request =
-                new AiPreferenceUpdateRequest(
-                        AiMode.SPECIFIC,
-                        "openrouter",
-                        "google/gemini-2.5-flash"
-                );
+        String selectedModel = CURATED_OPENROUTER_MODELS.get(0);
+        AiPreferenceUpdateRequest request = new AiPreferenceUpdateRequest(
+                AiMode.SPECIFIC,
+                "openrouter",
+                selectedModel
+        );
 
         service.update(userId, request);
 
-        assertThat(user.getAiMode())
-                .isEqualTo(AiMode.SPECIFIC);
+        assertThat(user.getAiMode()).isEqualTo(AiMode.SPECIFIC);
+        assertThat(user.getAiProvider()).isEqualTo("openrouter");
+        assertThat(user.getAiModel()).isEqualTo(selectedModel);
 
-        assertThat(user.getAiProvider())
-                .isEqualTo("openrouter");
+        AiPreferenceService.ResolvedPreference result = service.resolveForUser(userId);
+        assertThat(result.mode()).isEqualTo(AiMode.SPECIFIC);
+        assertThat(result.provider()).isEqualTo("openrouter");
+        assertThat(result.model()).isEqualTo(selectedModel);
+    }
 
-        assertThat(user.getAiModel())
-                .isEqualTo("google/gemini-2.5-flash");
+    @Test
+    void curatedOpenRouterModels_areExactlyFiveInRequiredOrderAndPersistExactly() {
+        var response = service.get(userId);
+        var openRouter = response.providers().stream()
+                .filter(provider -> provider.key().equals("openrouter"))
+                .findFirst()
+                .orElseThrow();
 
-        AiPreferenceService.ResolvedPreference result =
-                service.resolveForUser(userId);
+        assertThat(openRouter.models()).containsExactlyElementsOf(CURATED_OPENROUTER_MODELS);
+        assertThat(openRouter.models()).doesNotContain(
+                "deepseek/deepseek-v4-flash:free",
+                "openai/gpt-oss-120b:free",
+                "qwen/qwen3-235b-a22b-2507:free",
+                "google/gemini-2.5-flash",
+                "openrouter/free"
+        );
 
-        assertThat(result.mode())
-                .isEqualTo(AiMode.SPECIFIC);
-
-        assertThat(result.provider())
-                .isEqualTo("openrouter");
-
-        assertThat(result.model())
-                .isEqualTo("google/gemini-2.5-flash");
+        for (String model : CURATED_OPENROUTER_MODELS) {
+            service.update(userId, new AiPreferenceUpdateRequest(
+                    AiMode.SPECIFIC, "openrouter", model));
+            assertThat(service.resolveForUser(userId).model()).isEqualTo(model);
+        }
     }
 
     @Test
     void specificWithoutProvider_isRejected() {
-        AiPreferenceUpdateRequest request =
-                new AiPreferenceUpdateRequest(
-                        AiMode.SPECIFIC,
-                        null,
-                        "google/gemini-2.5-flash"
-                );
+        AiPreferenceUpdateRequest request = new AiPreferenceUpdateRequest(
+                AiMode.SPECIFIC, null, CURATED_OPENROUTER_MODELS.get(0));
 
-        assertThatThrownBy(() ->
-                service.update(userId, request)
-        )
+        assertThatThrownBy(() -> service.update(userId, request))
                 .isInstanceOf(InvalidAiPreferenceException.class)
                 .hasMessageContaining("provider");
     }
 
     @Test
     void specificWithoutModel_isRejected() {
-        AiPreferenceUpdateRequest request =
-                new AiPreferenceUpdateRequest(
-                        AiMode.SPECIFIC,
-                        "openrouter",
-                        null
-                );
+        AiPreferenceUpdateRequest request = new AiPreferenceUpdateRequest(
+                AiMode.SPECIFIC, "openrouter", null);
 
-        assertThatThrownBy(() ->
-                service.update(userId, request)
-        )
+        assertThatThrownBy(() -> service.update(userId, request))
                 .isInstanceOf(InvalidAiPreferenceException.class)
                 .hasMessageContaining("model");
     }
 
     @Test
     void unknownProvider_isRejected() {
-        AiPreferenceUpdateRequest request =
-                new AiPreferenceUpdateRequest(
-                        AiMode.SPECIFIC,
-                        "unknown-provider",
-                        "some-model"
-                );
+        AiPreferenceUpdateRequest request = new AiPreferenceUpdateRequest(
+                AiMode.SPECIFIC, "unknown-provider", "some-model");
 
-        assertThatThrownBy(() ->
-                service.update(userId, request)
-        )
+        assertThatThrownBy(() -> service.update(userId, request))
                 .isInstanceOf(InvalidAiPreferenceException.class)
                 .hasMessageContaining("Unsupported AI provider");
     }
 
     @Test
     void unsupportedModel_isRejected() {
-        AiPreferenceUpdateRequest request =
-                new AiPreferenceUpdateRequest(
-                        AiMode.SPECIFIC,
-                        "openrouter",
-                        "openrouter/free"
-                );
+        AiPreferenceUpdateRequest request = new AiPreferenceUpdateRequest(
+                AiMode.SPECIFIC, "openrouter", "openrouter/free");
 
-        assertThatThrownBy(() ->
-                service.update(userId, request)
-        )
+        assertThatThrownBy(() -> service.update(userId, request))
                 .isInstanceOf(InvalidAiPreferenceException.class)
                 .hasMessageContaining("Unsupported AI model");
     }
@@ -159,9 +149,7 @@ class AiPreferenceServiceTest {
         user.setAiProvider("openrouter");
         user.setAiModel(null);
 
-        assertThatThrownBy(() ->
-                service.resolveForUser(userId)
-        )
+        assertThatThrownBy(() -> service.resolveForUser(userId))
                 .isInstanceOf(InvalidAiPreferenceException.class)
                 .hasMessageContaining("model");
     }
@@ -170,45 +158,24 @@ class AiPreferenceServiceTest {
     void autoIgnoresAndClearsStaleProviderAndModel() {
         user.setAiMode(AiMode.SPECIFIC);
         user.setAiProvider("openrouter");
-        user.setAiModel("google/gemini-2.5-flash");
+        user.setAiModel(CURATED_OPENROUTER_MODELS.get(0));
 
-        service.update(
-                userId,
-                new AiPreferenceUpdateRequest(
-                        AiMode.AUTO,
-                        "openrouter",
-                        "google/gemini-2.5-flash"
-                )
-        );
+        service.update(userId, new AiPreferenceUpdateRequest(
+                AiMode.AUTO, "openrouter", CURATED_OPENROUTER_MODELS.get(0)));
 
-        assertThat(user.getAiMode())
-                .isEqualTo(AiMode.AUTO);
-
-        assertThat(user.getAiProvider())
-                .isNull();
-
-        assertThat(user.getAiModel())
-                .isNull();
+        assertThat(user.getAiMode()).isEqualTo(AiMode.AUTO);
+        assertThat(user.getAiProvider()).isNull();
+        assertThat(user.getAiModel()).isNull();
     }
 
     @Test
-    void openRouterGeminiModel_resolvesExactly() {
-        service.update(
-                userId,
-                new AiPreferenceUpdateRequest(
-                        AiMode.SPECIFIC,
-                        "openrouter",
-                        "google/gemini-2.5-flash"
-                )
-        );
+    void specificPersistence_isExactForStructuredOutputModels() {
+        for (String model : CURATED_OPENROUTER_MODELS.subList(0, 3)) {
+            service.update(userId, new AiPreferenceUpdateRequest(
+                    AiMode.SPECIFIC, "openrouter", model));
 
-        AiPreferenceService.ResolvedPreference result =
-                service.resolveForUser(userId);
-
-        assertThat(result.provider())
-                .isEqualTo("openrouter");
-
-        assertThat(result.model())
-                .isEqualTo("google/gemini-2.5-flash");
+            assertThat(user.getAiModel()).isEqualTo(model);
+            assertThat(service.resolveForUser(userId).model()).isEqualTo(model);
+        }
     }
 }

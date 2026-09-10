@@ -25,7 +25,13 @@
 export const PROVIDER_MODELS = {
   gemini: ['gemini-3.6-flash'],
   openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  openrouter: ['google/gemini-2.5-flash'],
+  openrouter: [
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'cohere/north-mini-code:free',
+  ],
   auto: [],
 }
 
@@ -136,10 +142,6 @@ export const nodeConfigs = {
       { key: 'subjectFilter', label: 'Subject contains (filter, optional)', type: 'text', placeholder: 'Invoice' },
     ],
   },
-  // Config for the GitHub Event TRIGGER (fires the workflow on push/PR/etc).
-  // Distinct from `github` below, which is the GitHub INTEGRATION action node
-  // (create issue/PR/comment) — these two node types were previously conflated
-  // under one "github" config key even though only the trigger used these fields.
   github_event: {
     fields: [
       { key: 'repo', label: 'Repository', type: 'text', placeholder: 'owner/repo-name' },
@@ -173,11 +175,6 @@ export const nodeConfigs = {
       { key: 'value', label: 'Expected Value', type: 'text', placeholder: 'success' },
     ],
   },
-  // Matches config.field's value in the input payload against config.cases (compared
-  // as strings) and follows only the outgoing edge whose sourceHandle/edge.data.branch
-  // equals the matched case — see SwitchStrategy.java / WorkflowExecutor's branchKey
-  // handling. `cases` also drives the node's dynamic per-case output handles (see
-  // NodeWrapper.jsx) — each case becomes one labeled output.
   switch: {
     fields: [
       { key: 'field', label: 'Field to Match', type: 'text', placeholder: 'match', description: 'Field in the input payload to compare against each case below' },
@@ -193,7 +190,6 @@ export const nodeConfigs = {
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
     ],
   },
-  // GitHub INTEGRATION action node (create issue / PR / comment) — see github_event above for the trigger.
   github: {
     fields: [
       { key: 'repo', label: 'Repository (owner/repo)', type: 'text', placeholder: 'owner/repo-name' },
@@ -283,9 +279,6 @@ export const nodeConfigs = {
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
     ],
   },
-  // Safe, no-code field mapping — see TransformStrategy.java for the exact contract.
-  // Each row: { output: "repo", source: "repository.full_name", strip: "" }.
-  // `source` supports dot-paths with numeric array indices (e.g. "commits.0.message").
   transform: {
     fields: [
       { key: 'mappings', label: 'Field Mappings', type: 'mapping-editor', description: 'Map fields from the input payload to a new output shape. Leave empty to pass the input through unchanged.' },

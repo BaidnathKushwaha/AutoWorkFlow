@@ -29,7 +29,7 @@ public class OpenRouterClient implements AiProvider {
     @Value("${app.openrouter.api-key:}")
     private String platformApiKey;
 
-    @Value("${app.openrouter.default-model:openrouter/free}")
+    @Value("${app.openrouter.default-model:nvidia/nemotron-3-super-120b-a12b:free}")
     private String defaultModel;
 
     @Override
@@ -80,30 +80,22 @@ public class OpenRouterClient implements AiProvider {
         );
 
         if (request.temperature() != null) {
-            body.put(
-                    "temperature",
-                    request.temperature()
-            );
+            body.put("temperature", request.temperature());
         }
 
         if (request.maxTokens() != null) {
-            body.put(
-                    "max_tokens",
-                    request.maxTokens()
-            );
+            body.put("max_tokens", request.maxTokens());
         }
 
-        if (Boolean.TRUE.equals(request.structuredOutput())) {
+        if (Boolean.TRUE.equals(request.structuredOutput())
+                && OpenRouterModelCapabilities.forModel(model).supportsStructuredOutput()) {
             body.put(
                     "response_format",
                     Map.of("type", "json_object")
             );
         }
 
-        log.debug(
-                "Calling OpenRouter model={}",
-                model
-        );
+        log.debug("Calling OpenRouter model={}", model);
 
         try {
             JsonNode response =
@@ -114,18 +106,14 @@ public class OpenRouterClient implements AiProvider {
                                     HttpHeaders.AUTHORIZATION,
                                     "Bearer " + apiKey
                             )
-                            .contentType(
-                                    MediaType.APPLICATION_JSON
-                            )
+                            .contentType(MediaType.APPLICATION_JSON)
                             .bodyValue(body)
                             .retrieve()
                             .onStatus(
                                     status -> status.isError(),
                                     clientResponse ->
                                             clientResponse
-                                                    .bodyToMono(
-                                                            String.class
-                                                    )
+                                                    .bodyToMono(String.class)
                                                     .defaultIfEmpty("")
                                                     .flatMap(
                                                             errorBody ->
@@ -142,17 +130,13 @@ public class OpenRouterClient implements AiProvider {
                                                     )
                             )
                             .bodyToMono(JsonNode.class)
-                            .timeout(
-                                    Duration.ofSeconds(60)
-                            )
+                            .timeout(Duration.ofSeconds(60))
                             .block();
 
             if (response == null
                     || !response.has("choices")
                     || response.get("choices").isEmpty()) {
-                throw new AiException(
-                        "OpenRouter returned an empty response"
-                );
+                throw new AiException("OpenRouter returned an empty response");
             }
 
             JsonNode message =
@@ -162,34 +146,22 @@ public class OpenRouterClient implements AiProvider {
                             .get("message");
 
             if (message == null || message.isNull()) {
-                throw new AiException(
-                        "OpenRouter returned no assistant message"
-                );
+                throw new AiException("OpenRouter returned no assistant message");
             }
 
-            JsonNode contentNode =
-                    message.get("content");
+            JsonNode contentNode = message.get("content");
 
-            if (contentNode == null
-                    || contentNode.isNull()) {
-                throw new AiException(
-                        "OpenRouter returned no assistant content"
-                );
+            if (contentNode == null || contentNode.isNull()) {
+                throw new AiException("OpenRouter returned no assistant content");
             }
 
-            String content =
-                    contentNode.asText();
+            String content = contentNode.asText();
 
             if (content.isBlank()) {
-                throw new AiException(
-                        "OpenRouter returned empty assistant content"
-                );
+                throw new AiException("OpenRouter returned empty assistant content");
             }
 
-            return new ChatResponse(
-                    content,
-                    model
-            );
+            return new ChatResponse(content, model);
 
         } catch (AiProviderException e) {
             log.warn(
@@ -198,14 +170,10 @@ public class OpenRouterClient implements AiProvider {
                     e.getHttpStatus(),
                     e.getCode()
             );
-
             throw e;
 
         } catch (Exception e) {
-            throw new AiException(
-                    "OpenRouter request failed",
-                    e
-            );
+            throw new AiException("OpenRouter request failed", e);
         }
     }
 }

@@ -29,13 +29,14 @@ import static org.mockito.Mockito.*;
  * map moved from AiService itself into AiProviderRegistry (so AiProviderRouter's AUTO
  * mode can share the exact same source of truth) — AiService now takes
  * (AiProviderRegistry, AiProviderRouter) instead of building its own map from a raw
- * List&lt;AiProvider&gt;, but its public contract (chat(String, ChatRequest)) is
+ * List<AiProvider>, but its public contract (chat(String, ChatRequest)) is
  * unchanged. A new @Component implementing AiProvider (like OpenRouterClient) is still
  * picked up automatically with zero AiService changes required — this suite proves
  * that end-to-end for the real OpenRouterClient class, not a stand-in fake.
  */
 class AiServiceTest {
 
+    private static final String OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
     private HttpServer openRouterServer;
     private String openRouterBaseUrl;
 
@@ -63,7 +64,7 @@ class AiServiceTest {
         WebClient webClient = WebClient.builder().baseUrl(openRouterBaseUrl).build();
         OpenRouterClient client = new OpenRouterClient(webClient);
         ReflectionTestUtils.setField(client, "platformApiKey", "test-platform-key");
-        ReflectionTestUtils.setField(client, "defaultModel", "openai/gpt-4o-mini");
+        ReflectionTestUtils.setField(client, "defaultModel", OPENROUTER_MODEL);
         return client;
     }
 
@@ -96,26 +97,19 @@ class AiServiceTest {
 
     @Test
     void openRouterClient_isAutoDiscoveredAndRegisteredUnderExactKey() {
-        // OpenRouterClient.key() must literally be "openrouter" for AiService's
-        // Collectors.toMap(AiProvider::key, ...) to register it there.
         assertThat(realOpenRouterClient().key()).isEqualTo("openrouter");
     }
 
     @Test
     void chatWithOpenrouter_dispatchesToTheRealOpenRouterClient_notAFakeOrAnotherProvider() {
         AiService service = serviceWithAllThreeProviders();
-
         ChatResponse response = service.chat("openrouter", minimalRequest());
-
-        // This response can ONLY have come from the real OpenRouterClient hitting the local
-        // fake OpenRouter server — proves genuine dispatch, not just a registered-but-unused entry.
         assertThat(response.content()).isEqualTo("response from real OpenRouterClient");
     }
 
     @Test
     void addingOpenRouter_doesNotBreakDispatchToOpenAiOrGemini() {
         AiService service = serviceWithAllThreeProviders();
-
         assertThat(service.chat("openai", minimalRequest()).content()).isEqualTo("response from fake openai");
         assertThat(service.chat("gemini", minimalRequest()).content()).isEqualTo("response from fake gemini");
     }
@@ -123,19 +117,13 @@ class AiServiceTest {
     @Test
     void providerKeyResolution_isCaseInsensitive_forOpenrouterToo() {
         AiService service = serviceWithAllThreeProviders();
-
         assertThat(service.chat("OpenRouter", minimalRequest()).content()).isEqualTo("response from real OpenRouterClient");
         assertThat(service.chat("OPENROUTER", minimalRequest()).content()).isEqualTo("response from real OpenRouterClient");
     }
 
     @Test
     void registryConceptuallyContainsAllThreeProviders() {
-        // AiService doesn't (and per this task, shouldn't) expose a getter for the provider
-        // map, so we verify registration indirectly through the one place it's already
-        // observable without changing AiService: the "unsupported provider" error message,
-        // which lists providers.keySet() — must contain exactly these three, no more, no less.
         AiService service = serviceWithAllThreeProviders();
-
         assertThatThrownBy(() -> service.chat("does_not_exist", minimalRequest()))
                 .isInstanceOf(AiException.class)
                 .hasMessageContaining("openai")
@@ -145,35 +133,21 @@ class AiServiceTest {
 
     @Test
     void blankProvider_stillFallsBackToConfiguredDefault_withOpenRouterAlsoRegistered() {
-        AiService service = serviceWithAllThreeProviders(); // defaultProvider = "gemini"
-
+        AiService service = serviceWithAllThreeProviders();
         assertThat(service.chat("", minimalRequest()).content()).isEqualTo("response from fake gemini");
         assertThat(service.chat(null, minimalRequest()).content()).isEqualTo("response from fake gemini");
     }
 
     @Test
     void openRouterClientAlone_registersCorrectly_evenWithoutOpenAiOrGeminiPresent() {
-        // Sanity check that registration doesn't implicitly depend on the other two beans
-        // being present (e.g. no shared mutable state, no ordering assumption).
         AiProviderRegistry registry = new AiProviderRegistry(List.of(realOpenRouterClient()));
         AiService service = new AiService(registry, new AiProviderRouter(registry, new AiAutoModeProperties(),
                 org.mockito.Mockito.mock(com.autoworkflow.integration.IntegrationService.class)),
                 fakeAiPreferenceService());
-
         assertThat(service.chat("openrouter", minimalRequest()).content()).isEqualTo("response from real OpenRouterClient");
     }
 
-    /*
-     * Coverage for the "default" pathway added by the persistent AI preference feature:
-     * providerName == "default" must resolve through AiPreferenceService.resolveForUser(userId)
-     * rather than through the configured application.yml default-provider.
-     */
-
-    private User userWithPreference(
-            AiMode mode,
-            String provider,
-            String model
-    ) {
+    private User userWithPreference(AiMode mode, String provider, String model) {
         return User.builder()
                 .id(UUID.randomUUID())
                 .name("Preference User")
@@ -190,22 +164,13 @@ class AiServiceTest {
                 List.of(fakeProvider("openai"), fakeProvider("gemini"), realOpenRouterClient()));
         AiProviderRouter router = new AiProviderRouter(registry, new AiAutoModeProperties(),
                 org.mockito.Mockito.mock(com.autoworkflow.integration.IntegrationService.class));
-
         UUID userId = UUID.randomUUID();
         UserRepository userRepository = mock(UserRepository.class);
-        when(userRepository.findById(userId))
-                .thenReturn(Optional.of(userWithPreference(AiMode.AUTO, null, null)));
-
+        when(userRepository.findById(userId)).thenReturn(Optional.of(userWithPreference(AiMode.AUTO, null, null)));
         AiService service = new AiService(registry, router, new AiPreferenceService(userRepository));
-        // Configured application.yml default is deliberately different from "auto" here, to prove
-        // the account preference (auto) — not the static config default — governs "default" calls.
         ReflectionTestUtils.setField(service, "defaultProvider", "openai");
-
         ChatResponse response = service.chat("default",
                 ChatRequest.builder().messages(List.of(ChatMessage.user("hi"))).userId(userId).build());
-
-        // AUTO mode's fallback chain starts with OpenRouter — confirms the router, not a single
-        // fixed provider, handled the request.
         assertThat(response.content()).isEqualTo("response from real OpenRouterClient");
     }
 
@@ -215,19 +180,13 @@ class AiServiceTest {
                 List.of(fakeProvider("openai"), fakeProvider("gemini"), realOpenRouterClient()));
         AiProviderRouter router = new AiProviderRouter(registry, new AiAutoModeProperties(),
                 org.mockito.Mockito.mock(com.autoworkflow.integration.IntegrationService.class));
-
         UUID userId = UUID.randomUUID();
         UserRepository userRepository = mock(UserRepository.class);
         when(userRepository.findById(userId))
-                .thenReturn(Optional.of(userWithPreference(AiMode.SPECIFIC,"gemini", "gemini-3.6-flash")));
-
+                .thenReturn(Optional.of(userWithPreference(AiMode.SPECIFIC, "gemini", "gemini-3.6-flash")));
         AiService service = new AiService(registry, router, new AiPreferenceService(userRepository));
-
         ChatResponse response = service.chat("default",
                 ChatRequest.builder().messages(List.of(ChatMessage.user("hi"))).userId(userId).build());
-
-        // SPECIFIC dispatches straight to the registered "gemini" provider — never the router,
-        // never openai — matching "SPECIFIC must not silently become AUTO".
         assertThat(response.content()).isEqualTo("response from fake gemini");
     }
 
@@ -237,41 +196,23 @@ class AiServiceTest {
                 List.of(fakeProvider("openai"), fakeProvider("gemini"), realOpenRouterClient()));
         AiProviderRouter router = new AiProviderRouter(registry, new AiAutoModeProperties(),
                 org.mockito.Mockito.mock(com.autoworkflow.integration.IntegrationService.class));
-
         AiService service = new AiService(registry, router, fakeAiPreferenceService());
-
         ChatResponse response = service.chat("default",
                 ChatRequest.builder().messages(List.of(ChatMessage.user("hi"))).build());
-
         assertThat(response.content()).isEqualTo("response from real OpenRouterClient");
     }
+
     @Test
     void specificPreference_doesNotUseRouterFallback() {
         AiProvider openrouter = mock(AiProvider.class);
         when(openrouter.key()).thenReturn("openrouter");
-
-        when(openrouter.chat(any()))
-                .thenReturn(
-                        new ChatResponse(
-                                "specific-response",
-                                "google/gemini-2.5-flash"
-                        )
-                );
+        when(openrouter.chat(any())).thenReturn(new ChatResponse("specific-response", OPENROUTER_MODEL));
 
         AiProvider gemini = mock(AiProvider.class);
         when(gemini.key()).thenReturn("gemini");
 
-        AiProviderRegistry registry =
-                new AiProviderRegistry(
-                        List.of(
-                                openrouter,
-                                gemini
-                        )
-                );
-
-        AiProviderRouter router =
-                mock(AiProviderRouter.class);
-
+        AiProviderRegistry registry = new AiProviderRegistry(List.of(openrouter, gemini));
+        AiProviderRouter router = mock(AiProviderRouter.class);
         UUID userId = UUID.randomUUID();
 
         User user = User.builder()
@@ -280,50 +221,22 @@ class AiServiceTest {
                 .email("specific@example.com")
                 .aiMode(AiMode.SPECIFIC)
                 .aiProvider("openrouter")
-                .aiModel("google/gemini-2.5-flash")
+                .aiModel(OPENROUTER_MODEL)
                 .build();
 
-        UserRepository repository =
-                mock(UserRepository.class);
+        UserRepository repository = mock(UserRepository.class);
+        when(repository.findById(userId)).thenReturn(Optional.of(user));
+        AiPreferenceService preferenceService = new AiPreferenceService(repository);
+        AiService service = new AiService(registry, router, preferenceService);
 
-        when(repository.findById(userId))
-                .thenReturn(Optional.of(user));
+        ChatRequest request = ChatRequest.builder()
+                .messages(List.of(ChatMessage.user("hello")))
+                .userId(userId)
+                .build();
 
-        AiPreferenceService preferenceService =
-                new AiPreferenceService(repository);
-
-        AiService service =
-                new AiService(
-                        registry,
-                        router,
-                        preferenceService
-                );
-
-        ChatRequest request =
-                ChatRequest.builder()
-                        .messages(
-                                List.of(
-                                        ChatMessage.user("hello")
-                                )
-                        )
-                        .userId(userId)
-                        .build();
-
-        ChatResponse response =
-                service.chat(
-                        "default",
-                        request
-                );
-
-        assertThat(response.content())
-                .isEqualTo("specific-response");
-
-        verify(openrouter)
-                .chat(argThat(r ->
-                        "google/gemini-2.5-flash"
-                                .equals(r.model())
-                ));
-
+        ChatResponse response = service.chat("default", request);
+        assertThat(response.content()).isEqualTo("specific-response");
+        verify(openrouter).chat(argThat(r -> OPENROUTER_MODEL.equals(r.model())));
         verifyNoInteractions(router);
     }
 }
