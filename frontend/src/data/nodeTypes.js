@@ -31,7 +31,7 @@ export const PROVIDER_MODELS = {
     'deepseek/deepseek-v4-flash:free',
     'qwen/qwen3-235b-a22b-2507:free',
     'nvidia/nemotron-3-ultra-550b-a55b:free',
-    'google/gemma-4-26b-a4b:free',
+    'google/gemma-4-26b-a4b-it:free',
   ],
   auto: [],
 }
