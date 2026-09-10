@@ -19,12 +19,11 @@ public class AiPreferenceService {
     private static final Map<String, List<String>> SUPPORTED_MODELS = Map.of(
             "openrouter",
             List.of(
-                    "google/gemini-2.5-flash",
-                    "openai/gpt-oss-120b:free",
-                    "deepseek/deepseek-v4-flash:free",
-                    "qwen/qwen3-235b-a22b-2507:free",
+                    "nvidia/nemotron-3-super-120b-a12b:free",
+                    "google/gemma-4-31b-it:free",
+                    "google/gemma-4-26b-a4b-it:free",
                     "nvidia/nemotron-3-ultra-550b-a55b:free",
-                    "google/gemma-4-26b-a4b-it:free"
+                    "cohere/north-mini-code:free"
             ),
 
             "gemini",
