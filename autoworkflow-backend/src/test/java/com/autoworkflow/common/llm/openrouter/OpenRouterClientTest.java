@@ -94,7 +94,7 @@ class OpenRouterClientTest {
     }
 
     @Test
-    void successfulChat_returnsContentAndExactSelectedModel() {
+    void successfulChat_returnsContentAndExactSelectedModel() throws Exception {
         OpenRouterClient client = client("platform-key", "openai/gpt-4o-mini");
         ChatResponse response = client.chat(requestWith(null, STRUCTURED_MODEL, null, null, null));
 
