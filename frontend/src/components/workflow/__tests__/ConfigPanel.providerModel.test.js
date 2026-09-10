@@ -16,7 +16,7 @@ describe('resolveProviderChangePatch', () => {
     expect(resolveProviderChangePatch('openai', '')).toEqual({ provider: 'openai', model: 'gpt-4o-mini' })
   })
 
-  it('switching FROM auto to openrouter selects google/gemini-2.5-flash', () => {
+  it('switching FROM auto to openrouter selects the first curated OpenRouter model', () => {
     expect(
         resolveProviderChangePatch(
             'openrouter',
@@ -24,7 +24,7 @@ describe('resolveProviderChangePatch', () => {
         )
     ).toEqual({
       provider: 'openrouter',
-      model: 'google/gemini-2.5-flash'
+      model: 'nvidia/nemotron-3-super-120b-a12b:free'
     })
   })
 
