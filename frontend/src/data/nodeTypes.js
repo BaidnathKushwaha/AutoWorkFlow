@@ -142,10 +142,6 @@ export const nodeConfigs = {
       { key: 'subjectFilter', label: 'Subject contains (filter, optional)', type: 'text', placeholder: 'Invoice' },
     ],
   },
-  // Config for the GitHub Event TRIGGER (fires the workflow on push/PR/etc).
-  // Distinct from `github` below, which is the GitHub INTEGRATION action node
-  // (create issue/PR/comment) — these two node types were previously conflated
-  // under one "github" config key even though only the trigger used these fields.
   github_event: {
     fields: [
       { key: 'repo', label: 'Repository', type: 'text', placeholder: 'owner/repo-name' },
@@ -179,11 +175,6 @@ export const nodeConfigs = {
       { key: 'value', label: 'Expected Value', type: 'text', placeholder: 'success' },
     ],
   },
-  // Matches config.field's value in the input payload against config.cases (compared
-  // as strings) and follows only the outgoing edge whose sourceHandle/edge.data.branch
-  // equals the matched case — see SwitchStrategy.java / WorkflowExecutor's branchKey
-  // handling. `cases` also drives the node's dynamic per-case output handles (see
-  // NodeWrapper.jsx) — each case becomes one labeled output.
   switch: {
     fields: [
       { key: 'field', label: 'Field to Match', type: 'text', placeholder: 'match', description: 'Field in the input payload to compare against each case below' },
@@ -199,7 +190,6 @@ export const nodeConfigs = {
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
     ],
   },
-  // GitHub INTEGRATION action node (create issue / PR / comment) — see github_event above for the trigger.
   github: {
     fields: [
       { key: 'repo', label: 'Repository (owner/repo)', type: 'text', placeholder: 'owner/repo-name' },
@@ -270,7 +260,7 @@ export const nodeConfigs = {
   },
   send_email: {
     fields: [
-      { key: 'to', label: 'Recipient Email', type: 'text', placeholder: 'recipient@example.com' },
+      { key: 'to', label: 'Recipient Email', type: 'text', placeholder: 'user@example.com' },
       { key: 'subject', label: 'Subject', type: 'text', placeholder: 'Alert' },
       { key: 'body', label: 'Body', type: 'textarea', placeholder: 'Email content...' },
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
@@ -289,9 +279,6 @@ export const nodeConfigs = {
       { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
     ],
   },
-  // Safe, no-code field mapping — see TransformStrategy.java for the exact contract.
-  // Each row: { output: "repo", source: "repository.full_name", strip: "" }.
-  // `source` supports dot-paths with numeric array indices (e.g. "commits.0.message").
   transform: {
     fields: [
       { key: 'mappings', label: 'Field Mappings', type: 'mapping-editor', description: 'Map fields from the input payload to a new output shape. Leave empty to pass the input through unchanged.' },
