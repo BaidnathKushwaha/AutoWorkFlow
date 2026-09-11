@@ -4,5 +4,5 @@ import jakarta.validation.constraints.NotBlank;
 
 public record OAuthCallbackRequest(
         @NotBlank String code,
-        String state
+        @NotBlank String state
 ) {}

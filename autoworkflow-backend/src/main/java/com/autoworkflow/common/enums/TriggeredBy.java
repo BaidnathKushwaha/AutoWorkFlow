@@ -1,5 +1,5 @@
 package com.autoworkflow.common.enums;
 
 public enum TriggeredBy {
-    WEBHOOK, SCHEDULE, API, MANUAL
+    WEBHOOK, SCHEDULE, EMAIL_RECEIVED, API, MANUAL
 }

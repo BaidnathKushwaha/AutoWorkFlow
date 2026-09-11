@@ -7,13 +7,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.Map;
 
-/**
- * Builds provider authorization URLs and exchanges auth codes for tokens.
- */
 @Service
 @RequiredArgsConstructor
 public class OAuthAuthorizationService {
-
     private final OAuthProviderConfig oAuthProviderConfig;
 
     private static final Map<String, String> AUTHORIZE_ENDPOINTS = Map.of(
@@ -39,18 +35,21 @@ public class OAuthAuthorizationService {
     public String buildAuthorizationUrl(String provider, String state) {
         OAuthProviderConfig.ProviderCreds creds = credsFor(provider);
         String endpoint = AUTHORIZE_ENDPOINTS.get(provider);
-        if (endpoint == null) {
-            throw new IntegrationException("Unsupported OAuth provider: " + provider);
-        }
+        if (endpoint == null) throw new IntegrationException("Unsupported OAuth provider: " + provider);
+        if (isGoogleProvider(provider)) requireGoogleConfigured(creds, provider);
 
-        return UriComponentsBuilder.fromHttpUrl(endpoint)
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(endpoint)
                 .queryParam("client_id", creds.getClientId())
                 .queryParam("redirect_uri", creds.getRedirectUri())
                 .queryParam("scope", DEFAULT_SCOPES.getOrDefault(provider, ""))
                 .queryParam("state", state)
-                .queryParam("response_type", "code")
-                .build()
-                .toUriString();
+                .queryParam("response_type", "code");
+
+        if (isGoogleProvider(provider)) {
+            builder.queryParam("access_type", "offline")
+                    .queryParam("prompt", "consent");
+        }
+        return builder.build().toUriString();
     }
 
     private OAuthProviderConfig.ProviderCreds credsFor(String provider) {
@@ -63,5 +62,16 @@ public class OAuthAuthorizationService {
             default -> throw new IntegrationException("Unsupported OAuth provider: " + provider);
         };
     }
-}
 
+    private boolean isGoogleProvider(String provider) {
+        return "google".equals(provider) || "gmail".equals(provider) || "google_sheets".equals(provider);
+    }
+
+    private void requireGoogleConfigured(OAuthProviderConfig.ProviderCreds creds, String provider) {
+        if (creds.getClientId() == null || creds.getClientId().isBlank() || creds.getClientId().startsWith("${") ||
+                creds.getClientSecret() == null || creds.getClientSecret().isBlank() || creds.getClientSecret().startsWith("${") ||
+                creds.getRedirectUri() == null || creds.getRedirectUri().isBlank() || creds.getRedirectUri().startsWith("${")) {
+            throw new IntegrationException(provider + " OAuth is not configured. Set the Google client ID, client secret, and redirect URI.");
+        }
+    }
+}

@@ -12,50 +12,39 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 
-/** Powers the "AI Email Router" template's classify-intent step. */
 @Component
 @RequiredArgsConstructor
 public class ClassifierStrategy implements NodeStrategy {
-
     private final AiService aiService;
 
     @Override public String getTypeKey() { return "classifier"; }
 
     @Override
     public NodeExecutionResult execute(NodeExecutionContext ctx) {
-        List<String> labels = new java.util.ArrayList<>();
-        ctx.getNodeConfig().path("labels").forEach(l -> labels.add(l.asText()));
+        List<String> labels = new ArrayList<>();
+        ctx.getNodeConfig().path("labels").forEach(l -> labels.add(l.asText().trim()));
         List<String> resolvedLabels = labels.isEmpty() ? List.of("support", "sales", "spam", "other") : labels;
-
         String text = com.autoworkflow.util.PayloadTextResolver.resolveTextOrRaw(ctx.getNodeConfig(), ctx.getInputPayload());
+        String prompt = "Classify the following text into exactly one of these labels: " + resolvedLabels
+                + ". Respond with only the label.\n\nText: " + text;
+        String provider = ctx.getNodeConfig().path("provider").asText("default");
 
-        String prompt = "Classify the following text into exactly one of these labels: " + resolvedLabels +
-                ". Respond with only the label.\n\nText: " + text;
-
-        // No hardcoded fallback here — a blank/missing provider is resolved centrally by
-        // AiService: "default" means "use this user's account-level AI preference" (falling
-        // back further to system AUTO only if they have none), so this strategy stays
-        // provider-agnostic. A node's own explicit provider choice still overrides it.
-        String provider = ctx.getNodeConfig()
-                .path("provider")
-                .asText("default");
-
-        ChatResponse chatResponse = aiService.chat(
-                provider,
-                ChatRequest.builder()
-                        .messages(List.of(ChatMessage.user(prompt)))
-                        .model(ctx.getNodeConfig().path("model").asText(null))
-                        .userId(ctx.getUserId())
-                        .build()
-        );
+        ChatResponse chatResponse = aiService.chat(provider, ChatRequest.builder()
+                .messages(List.of(ChatMessage.user(prompt)))
+                .model(ctx.getNodeConfig().path("model").asText(null))
+                .userId(ctx.getUserId())
+                .build());
 
         String label = chatResponse.content().trim();
+        String matched = resolvedLabels.stream().filter(l -> l.equalsIgnoreCase(label)).findFirst().orElse(null);
+        if (matched == null) throw new IllegalArgumentException("Classifier returned an unsupported label.");
 
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.set("input", ctx.getInputPayload());
-        output.put("label", label);
+        output.put("label", matched);
         output.put("provider", provider);
         if (chatResponse.model() != null) output.put("model", chatResponse.model());
         if (chatResponse.actualProvider() != null) {
