@@ -43,8 +43,7 @@ class OAuthStateServiceTest {
 
     @Test
     void consumeRejectsProviderMismatchAndReplay() {
-        UUID userId = UUID.randomUUID();
-        OAuthState saved = OAuthState.builder().id(UUID.randomUUID()).stateHash("hash").userId(userId)
+        OAuthState saved = OAuthState.builder().id(UUID.randomUUID()).stateHash("hash").userId(UUID.randomUUID())
                 .provider("gmail").expiresAt(Instant.now().plusSeconds(300)).build();
         when(repository.findByStateHash(any())).thenReturn(Optional.of(saved));
 
@@ -52,9 +51,12 @@ class OAuthStateServiceTest {
                 .isInstanceOf(IntegrationException.class)
                 .hasMessageContaining("does not match");
 
-        assertThatThrownBy(() -> service.consume("state", "gmail"))
-                .isInstanceOf(IntegrationException.class);
+        service.consume("state", "gmail");
         assertThat(saved.getUsedAt()).isNotNull();
+
+        assertThatThrownBy(() -> service.consume("state", "gmail"))
+                .isInstanceOf(IntegrationException.class)
+                .hasMessageContaining("already been used");
     }
 
     @Test
