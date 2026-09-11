@@ -1,6 +1,7 @@
 package com.autoworkflow.integration;
 
 import com.autoworkflow.common.enums.IntegrationStatus;
+import com.autoworkflow.integration.oauth.OAuthTokenExchangeRegistry;
 import com.autoworkflow.common.exception.IntegrationException;
 import com.autoworkflow.common.exception.ResourceNotFoundException;
 import com.autoworkflow.integration.dto.IntegrationResponse;
@@ -39,7 +40,9 @@ class IntegrationServiceTest {
         // Real EncryptionUtils (not mocked) so tests exercise an actual encrypt/decrypt
         // round-trip, not just "some string got stored somewhere".
         EncryptionUtils encryptionUtils = new EncryptionUtils("test-secret-at-least-32-bytes-long!!");
-        service = new IntegrationService(repository, encryptionUtils);
+        OAuthTokenExchangeRegistry oauthTokenExchangeRegistry = mock(OAuthTokenExchangeRegistry.class);
+
+        service = new IntegrationService(repository, encryptionUtils, oauthTokenExchangeRegistry);
         when(repository.save(any(Integration.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 

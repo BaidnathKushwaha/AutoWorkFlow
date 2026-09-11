@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Zap, Search, Filter, Mail, Brain, Table2, Github, FileText, Loader2, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, Zap, Search, Filter, Mail, Brain, Table2, GitBranch, FileText, Loader2, CheckCircle2 } from 'lucide-react'
 import { toast } from 'sonner'
 import templateService from '../services/template/templateService'
 
@@ -10,7 +10,7 @@ const DIFFICULTY_STYLES = {
   Advanced: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
 }
 
-const ICONS = { email_received: Mail, gmail: Mail, classifier: Brain, ai: Brain, google_sheets: Table2, github: Github, notion: FileText }
+const ICONS = { email_received: Mail, gmail: Mail, classifier: Brain, ai: Brain, google_sheets: Table2, github: GitBranch, notion: FileText }
 
 function TemplateCard({ template, onImport, importing }) {
   const diff = DIFFICULTY_STYLES[template.difficulty] || DIFFICULTY_STYLES.Beginner
