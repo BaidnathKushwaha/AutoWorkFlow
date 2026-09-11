@@ -4,6 +4,7 @@ import com.autoworkflow.common.exception.IntegrationException;
 import com.autoworkflow.common.response.ApiResponse;
 import com.autoworkflow.integration.dto.IntegrationResponse;
 import com.autoworkflow.integration.dto.OAuthCallbackRequest;
+import com.autoworkflow.integration.oauth.OAuthStateContext;
 import com.autoworkflow.integration.oauth.OAuthStateService;
 import com.autoworkflow.integration.oauth.OAuthToken;
 import com.autoworkflow.integration.oauth.OAuthTokenExchangeClient;
@@ -58,6 +59,12 @@ public class IntegrationController {
         return ApiResponse.success(IntegrationResponse.from(saved), "Connected " + provider + " as " + token.accountLabel());
     }
 
+    /**
+     * Handles the browser redirect from Google. Google uses one shared callback
+     * URI for Gmail and Google Sheets, so the callback path's "google" value is
+     * only the OAuth transport route. The actual integration provider is
+     * recovered from the trusted, single-use server-side OAuth state.
+     */
     @GetMapping("/oauth/{provider}/callback")
     public void oauthCallbackGet(@PathVariable String provider,
                                  @RequestParam(required = false) String code,
@@ -69,13 +76,14 @@ public class IntegrationController {
             return;
         }
         try {
-            UUID userId = oauthStateService.consume(state, provider);
-            OAuthToken token = resolveClient(provider).exchange(code);
+            OAuthStateContext context = oauthStateService.consume(state);
+            String originalProvider = context.provider();
+            OAuthToken token = resolveClient(originalProvider).exchange(code);
             integrationService.saveTokens(
-                    userId, provider, token.accessToken(), token.refreshToken(),
+                    context.userId(), originalProvider, token.accessToken(), token.refreshToken(),
                     token.accountLabel(), token.scopes(), token.expiresAt());
             response.sendRedirect(frontendUrl + "/integrations?status=success&provider=" +
-                    URLEncoder.encode(provider, StandardCharsets.UTF_8));
+                    URLEncoder.encode(originalProvider, StandardCharsets.UTF_8));
         } catch (Exception e) {
             redirectError(response, "Google authorization could not be completed. Please reconnect and try again.");
         }
@@ -103,9 +111,6 @@ public class IntegrationController {
 
     private OAuthTokenExchangeClient resolveClient(String provider) {
         OAuthTokenExchangeClient client = oauthTokenExchangeRegistry.resolveOrNull(provider);
-        if (client == null && ("gmail".equals(provider) || "google_sheets".equals(provider))) {
-            client = oauthTokenExchangeRegistry.resolveOrNull("google");
-        }
         if (client == null) throw new IntegrationException("OAuth for '" + provider + "' is not configured.");
         return client;
     }
