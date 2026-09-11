@@ -37,13 +37,19 @@ public class OAuthAuthorizationService {
         String endpoint = AUTHORIZE_ENDPOINTS.get(provider);
         if (endpoint == null) throw new IntegrationException("Unsupported OAuth provider: " + provider);
         if (isGoogleProvider(provider)) requireGoogleConfigured(creds, provider);
-        return UriComponentsBuilder.fromHttpUrl(endpoint)
+
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(endpoint)
                 .queryParam("client_id", creds.getClientId())
                 .queryParam("redirect_uri", creds.getRedirectUri())
                 .queryParam("scope", DEFAULT_SCOPES.getOrDefault(provider, ""))
                 .queryParam("state", state)
-                .queryParam("response_type", "code")
-                .build().toUriString();
+                .queryParam("response_type", "code");
+
+        if (isGoogleProvider(provider)) {
+            builder.queryParam("access_type", "offline")
+                    .queryParam("prompt", "consent");
+        }
+        return builder.build().toUriString();
     }
 
     private OAuthProviderConfig.ProviderCreds credsFor(String provider) {
