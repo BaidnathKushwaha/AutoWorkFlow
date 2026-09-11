@@ -42,11 +42,8 @@ public class GmailPollingScheduler {
         for (Workflow workflow : workflowRepository.findByStatusAndDeployedTrue(com.autoworkflow.common.enums.WorkflowStatus.ACTIVE)) {
             JsonNode trigger = findEmailTrigger(workflow.getCanvasNodes());
             if (trigger == null) continue;
-            try {
-                pollWorkflow(workflow, trigger.path("data"));
-            } catch (Exception e) {
-                log.warn("Gmail trigger poll failed for workflow {}: {}", workflow.getId(), e.getMessage());
-            }
+            try { pollWorkflow(workflow, trigger.path("data")); }
+            catch (Exception e) { log.warn("Gmail trigger poll failed for workflow {}: {}", workflow.getId(), e.getMessage()); }
         }
     }
 
@@ -54,17 +51,16 @@ public class GmailPollingScheduler {
         String token = integrationService.getDecryptedAccessToken(workflow.getUserId(), "gmail");
         GmailTriggerState state = stateRepository.findByWorkflowId(workflow.getId()).orElse(null);
         if (state == null) {
-            String historyId = currentHistoryId(token);
-            state = stateRepository.save(GmailTriggerState.builder()
-                    .workflowId(workflow.getId()).historyId(historyId).updatedAt(Instant.now()).build());
+            stateRepository.save(GmailTriggerState.builder().workflowId(workflow.getId())
+                    .historyId(currentHistoryId(token)).updatedAt(Instant.now()).build());
             return;
         }
 
+        String historyCursor = state.getHistoryId();
         JsonNode historyResponse = apiExecutor.execute("gmail", "read history", () ->
                 webClientBuilder.build().get().uri(uri -> uri.path(BASE + "/history")
-                        .queryParam("startHistoryId", state.getHistoryId())
-                        .queryParam("historyTypes", "messageAdded")
-                        .build())
+                        .queryParam("startHistoryId", historyCursor)
+                        .queryParam("historyTypes", "messageAdded").build())
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block());
 
@@ -74,35 +70,30 @@ public class GmailPollingScheduler {
             if (!id.isBlank()) messageIds.add(id);
         }));
 
-        String nextHistoryId = historyResponse.path("historyId").asText(state.getHistoryId());
+        String nextHistoryId = historyResponse.path("historyId").asText(historyCursor);
         for (String messageId : messageIds) {
-            JsonNode message = fetchMessage(token, messageId);
-            ObjectNode normalized = normalize(message);
-            if (matchesFilters(normalized, config)) {
-                executionService.execute(workflow.getId(), TriggeredBy.EMAIL_RECEIVED, normalized);
-            }
+            ObjectNode normalized = normalize(fetchMessage(token, messageId));
+            if (matchesFilters(normalized, config)) executionService.execute(workflow.getId(), TriggeredBy.EMAIL_RECEIVED, normalized);
         }
-
         state.setHistoryId(nextHistoryId);
         state.setUpdatedAt(Instant.now());
         stateRepository.save(state);
     }
 
     private String currentHistoryId(String token) {
-        JsonNode profile = apiExecutor.execute("gmail", "read profile", () ->
-                webClientBuilder.build().get().uri(BASE + "/profile")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block());
+        JsonNode profile = apiExecutor.execute("gmail", "read profile", () -> webClientBuilder.build().get().uri(BASE + "/profile")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
         String historyId = profile.path("historyId").asText();
         if (historyId.isBlank()) throw new IllegalStateException("Gmail did not return a history cursor.");
         return historyId;
     }
 
     private JsonNode fetchMessage(String token, String id) {
-        return apiExecutor.execute("gmail", "get trigger message", () ->
-                webClientBuilder.build().get().uri(BASE + "/messages/" + id + "?format=full")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block());
+        return apiExecutor.execute("gmail", "get trigger message", () -> webClientBuilder.build().get()
+                .uri(BASE + "/messages/" + id + "?format=full")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
     }
 
     private ObjectNode normalize(JsonNode message) {
@@ -116,8 +107,7 @@ public class GmailPollingScheduler {
         output.put("recipients", header(headers, "To"));
         output.put("subject", header(headers, "Subject"));
         String body = extractText(message.path("payload"));
-        if (body.isBlank()) body = message.path("snippet").asText("");
-        output.put("body", body);
+        output.put("body", body.isBlank() ? message.path("snippet").asText("") : body);
         output.set("attachments", attachmentMetadata(message.path("payload")));
         return output;
     }
