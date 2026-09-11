@@ -15,13 +15,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-/** Google Sheets append/read/find integration using the user's connected OAuth token. */
 @Component
 @RequiredArgsConstructor
 public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
-
     private static final String BASE = "https://sheets.googleapis.com/v4/spreadsheets";
+    private static final Pattern TEMPLATE = Pattern.compile("\\{\\{\\s*([^}]+?)\\s*}}" );
 
     private final WebClient.Builder webClientBuilder;
     private final IntegrationService integrationService;
@@ -38,7 +39,6 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
         String range = config.path("range").asText("").trim();
         if (spreadsheetId.isBlank()) throw new IllegalArgumentException("Google Sheets spreadsheet ID is required.");
         if (range.isBlank()) throw new IllegalArgumentException("Google Sheets A1 range is required.");
-
         return switch (operation) {
             case "append" -> append(ctx, token, spreadsheetId, range);
             case "read" -> read(token, spreadsheetId, range);
@@ -51,23 +51,17 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
         JsonNode values = ctx.getNodeConfig().path("values");
         ArrayNode row = JsonUtils.mapper().createArrayNode();
         if (values.isArray()) {
-            if (values.size() == 1 && values.get(0).isArray()) values.get(0).forEach(row::add);
-            else values.forEach(row::add);
+            JsonNode source = values.size() == 1 && values.get(0).isArray() ? values.get(0) : values;
+            source.forEach(value -> row.add(resolveValue(value, ctx.getInputPayload())));
         } else {
             row.add(ctx.getInputPayload() == null ? "" : ctx.getInputPayload().toString());
         }
-
         ObjectNode body = JsonUtils.mapper().createObjectNode();
-        ArrayNode rows = body.putArray("values");
-        rows.add(row);
-        String url = BASE + "/" + encodePath(spreadsheetId) + "/values/" + encodeRange(range) + ":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS";
-
-        JsonNode response = apiExecutor.execute("google_sheets", "append row", () ->
-                webClientBuilder.build().post().uri(url)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .bodyValue(body).retrieve().bodyToMono(JsonNode.class)
-                        .timeout(Duration.ofSeconds(30)).block());
-
+        body.putArray("values").add(row);
+        String url = BASE + "/" + encode(spreadsheetId) + "/values/" + encode(range) + ":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS";
+        JsonNode response = apiExecutor.execute("google_sheets", "append row", () -> webClientBuilder.build().post().uri(url)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).bodyValue(body).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.put("spreadsheetId", spreadsheetId);
         output.put("tableRange", response.path("tableRange").asText(""));
@@ -79,13 +73,10 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
     }
 
     private NodeExecutionResult read(String token, String spreadsheetId, String range) {
-        JsonNode response = apiExecutor.execute("google_sheets", "read range", () ->
-                webClientBuilder.build().get()
-                        .uri(BASE + "/" + encodePath(spreadsheetId) + "/values/" + encodeRange(range))
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve().bodyToMono(JsonNode.class)
-                        .timeout(Duration.ofSeconds(30)).block());
-
+        JsonNode response = apiExecutor.execute("google_sheets", "read range", () -> webClientBuilder.build().get()
+                .uri(BASE + "/" + encode(spreadsheetId) + "/values/" + encode(range))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.put("spreadsheetId", spreadsheetId);
         output.put("range", response.path("range").asText(range));
@@ -96,39 +87,49 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
 
     private NodeExecutionResult find(NodeExecutionContext ctx, String token, String spreadsheetId, String range) {
         String column = ctx.getNodeConfig().path("findColumn").asText("").trim();
-        String expected = ctx.getNodeConfig().path("findValue").asText("");
+        String expected = resolveString(ctx.getNodeConfig().path("findValue").asText(""), ctx.getInputPayload());
         if (column.isBlank()) throw new IllegalArgumentException("Google Sheets find column is required.");
-
-        JsonNode response = apiExecutor.execute("google_sheets", "find rows", () ->
-                webClientBuilder.build().get()
-                        .uri(BASE + "/" + encodePath(spreadsheetId) + "/values/" + encodeRange(range))
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve().bodyToMono(JsonNode.class)
-                        .timeout(Duration.ofSeconds(30)).block());
-
+        JsonNode response = apiExecutor.execute("google_sheets", "find rows", () -> webClientBuilder.build().get()
+                .uri(BASE + "/" + encode(spreadsheetId) + "/values/" + encode(range))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
         int index;
-        try { index = Integer.parseInt(column); }
-        catch (NumberFormatException e) { index = columnToIndex(column); }
-
+        try { index = Integer.parseInt(column); } catch (NumberFormatException e) { index = columnToIndex(column); }
         ArrayNode matches = JsonUtils.mapper().createArrayNode();
         JsonNode rows = response.path("values");
         for (int i = 0; i < rows.size(); i++) {
             JsonNode row = rows.get(i);
-            if (!row.isArray() || index >= row.size()) continue;
-            if (expected.equals(row.get(index).asText())) {
+            if (row.isArray() && index < row.size() && expected.equals(row.get(index).asText())) {
                 ObjectNode match = JsonUtils.mapper().createObjectNode();
                 match.put("rowIndex", i);
                 match.set("values", row);
                 matches.add(match);
             }
         }
-
         ObjectNode output = JsonUtils.mapper().createObjectNode();
         output.put("spreadsheetId", spreadsheetId);
         output.put("range", response.path("range").asText(range));
         output.set("matches", matches);
         output.put("count", matches.size());
         return NodeExecutionResult.ok(output);
+    }
+
+    private JsonNode resolveValue(JsonNode value, JsonNode payload) {
+        if (!value.isTextual()) return value;
+        return JsonUtils.mapper().getNodeFactory().textNode(resolveString(value.asText(), payload));
+    }
+
+    private String resolveString(String template, JsonNode payload) {
+        Matcher matcher = TEMPLATE.matcher(template == null ? "" : template);
+        StringBuffer out = new StringBuffer();
+        while (matcher.find()) {
+            String key = matcher.group(1).trim();
+            JsonNode value = payload == null ? null : ("input".equals(key) ? payload : payload.at(key.startsWith("/") ? key : "/" + key.replace('.', '/')));
+            String replacement = value == null || value.isMissingNode() ? "" : (value.isTextual() ? value.asText() : value.toString());
+            matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     private int columnToIndex(String column) {
@@ -140,6 +141,5 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
         return result - 1;
     }
 
-    private String encodePath(String value) { return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8); }
-    private String encodeRange(String value) { return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8); }
+    private String encode(String value) { return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8); }
 }
