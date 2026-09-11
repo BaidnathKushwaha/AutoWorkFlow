@@ -42,7 +42,35 @@ class OAuthStateServiceTest {
     }
 
     @Test
-    void consumeRejectsProviderMismatchAndReplay() {
+    void consumeRestoresGmailProviderFromTrustedState() {
+        UUID userId = UUID.randomUUID();
+        OAuthState saved = OAuthState.builder().id(UUID.randomUUID()).stateHash("hash").userId(userId)
+                .provider("gmail").expiresAt(Instant.now().plusSeconds(300)).build();
+        when(repository.findByStateHash(any())).thenReturn(Optional.of(saved));
+
+        OAuthStateContext context = service.consume("state");
+
+        assertThat(context.userId()).isEqualTo(userId);
+        assertThat(context.provider()).isEqualTo("gmail");
+        assertThat(saved.getUsedAt()).isNotNull();
+        verify(repository).save(saved);
+    }
+
+    @Test
+    void consumeRestoresGoogleSheetsProviderFromTrustedState() {
+        UUID userId = UUID.randomUUID();
+        OAuthState saved = OAuthState.builder().id(UUID.randomUUID()).stateHash("hash").userId(userId)
+                .provider("google_sheets").expiresAt(Instant.now().plusSeconds(300)).build();
+        when(repository.findByStateHash(any())).thenReturn(Optional.of(saved));
+
+        OAuthStateContext context = service.consume("state");
+
+        assertThat(context.userId()).isEqualTo(userId);
+        assertThat(context.provider()).isEqualTo("google_sheets");
+    }
+
+    @Test
+    void consumeRejectsProviderMismatchAndReplayForExplicitProviderBinding() {
         OAuthState saved = OAuthState.builder().id(UUID.randomUUID()).stateHash("hash").userId(UUID.randomUUID())
                 .provider("gmail").expiresAt(Instant.now().plusSeconds(300)).build();
         when(repository.findByStateHash(any())).thenReturn(Optional.of(saved));
@@ -65,9 +93,21 @@ class OAuthStateServiceTest {
                 .provider("gmail").expiresAt(Instant.now().minusSeconds(1)).build();
         when(repository.findByStateHash(any())).thenReturn(Optional.of(saved));
 
-        assertThatThrownBy(() -> service.consume("state", "gmail"))
+        assertThatThrownBy(() -> service.consume("state"))
                 .isInstanceOf(IntegrationException.class)
                 .hasMessageContaining("invalid or expired");
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void consumeRejectsMissingAndUnknownState() {
+        when(repository.findByStateHash(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.consume(null))
+                .isInstanceOf(IntegrationException.class)
+                .hasMessageContaining("missing");
+        assertThatThrownBy(() -> service.consume("unknown"))
+                .isInstanceOf(IntegrationException.class)
+                .hasMessageContaining("invalid or expired");
     }
 }
