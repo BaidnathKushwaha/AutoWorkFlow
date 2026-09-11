@@ -14,24 +14,17 @@ import java.util.List;
 
 @RequiredArgsConstructor
 public class GoogleTokenExchange implements OAuthTokenExchangeClient {
-
     private final WebClient.Builder webClientBuilder;
     private final OAuthProviderConfig oAuthProviderConfig;
     private final String providerKey;
 
-    @Override
-    public String provider() {
-        return providerKey;
-    }
+    @Override public String provider() { return providerKey; }
 
     @Override
     public OAuthToken exchange(String code) {
-        if (code == null || code.isBlank()) {
-            throw new IntegrationException("Google authorization code is missing.");
-        }
+        if (code == null || code.isBlank()) throw new IntegrationException("Google authorization code is missing.");
         OAuthProviderConfig.ProviderCreds creds = oAuthProviderConfig.getGoogle();
         requireConfigured(creds);
-
         var form = new org.springframework.util.LinkedMultiValueMap<String, String>();
         form.add("client_id", creds.getClientId());
         form.add("client_secret", creds.getClientSecret());
@@ -42,12 +35,9 @@ public class GoogleTokenExchange implements OAuthTokenExchangeClient {
     }
 
     public OAuthToken refresh(String refreshToken) {
-        if (refreshToken == null || refreshToken.isBlank()) {
-            throw new IntegrationException("Google refresh token is unavailable. Reconnect the integration.");
-        }
+        if (refreshToken == null || refreshToken.isBlank()) throw new IntegrationException("Google refresh token is unavailable. Reconnect the integration.");
         OAuthProviderConfig.ProviderCreds creds = oAuthProviderConfig.getGoogle();
         requireConfigured(creds);
-
         var form = new org.springframework.util.LinkedMultiValueMap<String, String>();
         form.add("client_id", creds.getClientId());
         form.add("client_secret", creds.getClientSecret());
@@ -58,29 +48,17 @@ public class GoogleTokenExchange implements OAuthTokenExchangeClient {
 
     private OAuthToken requestToken(org.springframework.util.MultiValueMap<String, String> form, String operation) {
         try {
-            JsonNode response = webClientBuilder.build().post()
-                    .uri("https://oauth2.googleapis.com/token")
-                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                    .bodyValue(form)
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .timeout(Duration.ofSeconds(15))
-                    .block();
-
+            JsonNode response = webClientBuilder.build().post().uri("https://oauth2.googleapis.com/token")
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED).bodyValue(form)
+                    .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(15)).block();
             if (response == null || response.has("error") || response.path("access_token").asText().isBlank()) {
                 throw new IntegrationException("Google token " + operation + " failed. Please reconnect the integration.");
             }
-
             String accessToken = response.path("access_token").asText();
             String refreshToken = response.path("refresh_token").asText(null);
             int expiresIn = response.path("expires_in").asInt(3600);
-            return new OAuthToken(
-                    accessToken,
-                    refreshToken,
-                    Instant.now().plusSeconds(expiresIn),
-                    "Google Workspace Account",
-                    List.of("API Access")
-            );
+            return new OAuthToken(accessToken, refreshToken, Instant.now().plusSeconds(expiresIn),
+                    "Google Workspace Account", scopesForProvider());
         } catch (WebClientResponseException e) {
             throw new IntegrationException("Google token " + operation + " failed. Please reconnect the integration.", e);
         } catch (IntegrationException e) {
@@ -88,6 +66,14 @@ public class GoogleTokenExchange implements OAuthTokenExchangeClient {
         } catch (Exception e) {
             throw new IntegrationException("Google token " + operation + " failed. Check Google OAuth configuration and try again.", e);
         }
+    }
+
+    private List<String> scopesForProvider() {
+        return switch (providerKey) {
+            case "gmail" -> List.of("https://www.googleapis.com/auth/gmail.modify");
+            case "google_sheets" -> List.of("https://www.googleapis.com/auth/spreadsheets");
+            default -> List.of("https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/spreadsheets");
+        };
     }
 
     private void requireConfigured(OAuthProviderConfig.ProviderCreds creds) {
