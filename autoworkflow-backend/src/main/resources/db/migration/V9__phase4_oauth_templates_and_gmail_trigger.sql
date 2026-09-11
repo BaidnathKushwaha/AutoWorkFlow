@@ -35,14 +35,13 @@ UPDATE templates SET
         ELSE COALESCE(difficulty, 'Beginner')
     END,
     integration_requirements = CASE name
-        WHEN 'AI Email Router' THEN '["gmail","google_sheets"]'
-        WHEN 'Resume Matcher' THEN '["gmail","google_sheets"]'
-        WHEN 'GitHub PR Smart Reviewer' THEN '["github"]'
-        WHEN 'Trend Generator' THEN '["notion"]'
-        ELSE COALESCE(integration_requirements, '[]')
+        WHEN 'AI Email Router' THEN 'gmail,google_sheets'
+        WHEN 'Resume Matcher' THEN 'gmail,google_sheets'
+        WHEN 'GitHub PR Smart Reviewer' THEN 'github'
+        WHEN 'Trend Generator' THEN 'notion'
+        ELSE COALESCE(integration_requirements, '')
     END;
 
--- Replace the misleading flagship definitions with executable canonical node graphs.
 UPDATE templates
 SET description = 'Classify new Gmail messages as Personal, Official, or Spam and append the result to Google Sheets.',
     trigger_icon_key = 'email_received',
