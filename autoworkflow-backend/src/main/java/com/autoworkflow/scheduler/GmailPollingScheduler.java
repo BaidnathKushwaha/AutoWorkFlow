@@ -57,12 +57,11 @@ public class GmailPollingScheduler {
         }
 
         String historyCursor = state.getHistoryId();
-        JsonNode historyResponse = apiExecutor.execute("gmail", "read history", () ->
-                webClientBuilder.build().get().uri(uri -> uri.path(BASE + "/history")
-                        .queryParam("startHistoryId", historyCursor)
+        JsonNode historyResponse = apiExecutor.execute("gmail", "read history", () -> webClientBuilder.build().get()
+                .uri(uri -> uri.path(BASE + "/history").queryParam("startHistoryId", historyCursor)
                         .queryParam("historyTypes", "messageAdded").build())
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .retrieve().bodyToMono(JsonNode.class).timeout(Duration.ofSeconds(30)).block());
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
 
         Set<String> messageIds = new LinkedHashSet<>();
         historyResponse.path("history").forEach(h -> h.path("messagesAdded").forEach(added -> {
@@ -73,6 +72,7 @@ public class GmailPollingScheduler {
         String nextHistoryId = historyResponse.path("historyId").asText(historyCursor);
         for (String messageId : messageIds) {
             ObjectNode normalized = normalize(fetchMessage(token, messageId));
+            enrichTextAttachments(token, messageId, normalized);
             if (matchesFilters(normalized, config)) executionService.execute(workflow.getId(), TriggeredBy.EMAIL_RECEIVED, normalized);
         }
         state.setHistoryId(nextHistoryId);
@@ -94,6 +94,29 @@ public class GmailPollingScheduler {
                 .uri(BASE + "/messages/" + id + "?format=full")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(30)).block());
+    }
+
+    private void enrichTextAttachments(String token, String messageId, ObjectNode normalized) {
+        StringBuilder attachmentText = new StringBuilder();
+        for (JsonNode attachment : normalized.path("attachments")) {
+            String mime = attachment.path("mimeType").asText("");
+            String attachmentId = attachment.path("attachmentId").asText("");
+            if (!mime.startsWith("text/") || attachmentId.isBlank()) continue;
+            try {
+                JsonNode response = apiExecutor.execute("gmail", "get attachment", () -> webClientBuilder.build().get()
+                        .uri(BASE + "/messages/" + messageId + "/attachments/" + attachmentId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                        .timeout(Duration.ofSeconds(30)).block());
+                String text = decode(response.path("data").asText(""));
+                if (!text.isBlank()) {
+                    ((ObjectNode) attachment).put("text", text);
+                    attachmentText.append("\n\n").append(text);
+                }
+            } catch (Exception e) {
+                log.debug("Unable to read text Gmail attachment {}: {}", attachment.path("filename").asText(), e.getMessage());
+            }
+        }
+        if (attachmentText.length() > 0) normalized.put("body", normalized.path("body").asText("") + attachmentText);
     }
 
     private ObjectNode normalize(JsonNode message) {
