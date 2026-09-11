@@ -34,6 +34,34 @@ public class OAuthStateService {
         return state;
     }
 
+    /**
+     * Consumes a callback state and returns the trusted user/provider context
+     * stored server-side. The provider is deliberately not supplied by the
+     * callback route, because Google uses one shared callback route for Gmail
+     * and Google Sheets.
+     */
+    @Transactional
+    public OAuthStateContext consume(String state) {
+        if (state == null || state.isBlank()) {
+            throw new IntegrationException("OAuth authorization state is missing.");
+        }
+        OAuthState record = repository.findByStateHash(hash(state))
+                .orElseThrow(() -> new IntegrationException("OAuth authorization state is invalid or expired."));
+        if (record.getUsedAt() != null) {
+            throw new IntegrationException("OAuth authorization state has already been used.");
+        }
+        if (record.getExpiresAt().isBefore(Instant.now())) {
+            throw new IntegrationException("OAuth authorization state is invalid or expired.");
+        }
+        record.setUsedAt(Instant.now());
+        repository.save(record);
+        return new OAuthStateContext(record.getUserId(), record.getProvider());
+    }
+
+    /**
+     * Retained for non-shared callback routes. It keeps the provider binding
+     * check for callers that already know the expected provider.
+     */
     @Transactional
     public UUID consume(String state, String provider) {
         if (state == null || state.isBlank()) {
