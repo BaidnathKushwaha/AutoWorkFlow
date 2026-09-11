@@ -4,6 +4,10 @@ import com.autoworkflow.common.enums.IntegrationStatus;
 import com.autoworkflow.common.exception.IntegrationException;
 import com.autoworkflow.common.exception.ResourceNotFoundException;
 import com.autoworkflow.integration.dto.IntegrationResponse;
+import com.autoworkflow.integration.oauth.GoogleTokenExchange;
+import com.autoworkflow.integration.oauth.OAuthToken;
+import com.autoworkflow.integration.oauth.OAuthTokenExchangeClient;
+import com.autoworkflow.integration.oauth.OAuthTokenExchangeRegistry;
 import com.autoworkflow.util.EncryptionUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,14 +23,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class IntegrationService {
 
+    private static final long REFRESH_SKEW_SECONDS = 60;
+
     private final IntegrationRepository integrationRepository;
     private final EncryptionUtils encryptionUtils;
+    private final OAuthTokenExchangeRegistry oauthTokenExchangeRegistry;
 
-    /** Returns one card per known provider: connected ones with real status, others as disconnected stubs. */
     public List<IntegrationResponse> listForUser(UUID userId) {
         Map<String, Integration> connected = integrationRepository.findByUserId(userId).stream()
                 .collect(Collectors.toMap(Integration::getProvider, i -> i));
-
         return IntegrationProviderCatalog.ALL_PROVIDERS.stream()
                 .map(provider -> connected.containsKey(provider)
                         ? IntegrationResponse.from(connected.get(provider))
@@ -38,20 +43,11 @@ public class IntegrationService {
     public Integration saveTokens(UUID userId, String provider, String accessToken, String refreshToken,
                                    String accountLabel, List<String> scopes, Instant expiresAt) {
         validateProvider(provider);
-
-        // NOTE: this deliberately does NOT make a live test call to the provider (e.g. an
-        // actual OpenAI/Gemini chat request) to verify the key works before saving. Doing so
-        // would spend the user's API quota just to connect an integration, which directly
-        // conflicts with keeping AutoWorkflow testable without burning AI credits. The
-        // trade-off: a syntactically-valid-looking but actually-invalid key will show as
-        // "Healthy" here and only surface as a clear "AI provider not connected" /
-        // AiProviderException AUTH_FAILED error the first time a workflow node actually
-        // calls it. This is a known, documented limitation — see the architecture report.
         Integration integration = integrationRepository.findByUserIdAndProvider(userId, provider)
                 .orElse(Integration.builder().userId(userId).provider(provider).build());
 
         integration.setEncryptedAccessToken(encryptionUtils.encrypt(accessToken));
-        if (refreshToken != null) {
+        if (refreshToken != null && !refreshToken.isBlank()) {
             integration.setEncryptedRefreshToken(encryptionUtils.encrypt(refreshToken));
         }
         integration.setAccountLabel(accountLabel);
@@ -59,7 +55,6 @@ public class IntegrationService {
         integration.setStatus(IntegrationStatus.HEALTHY);
         integration.setLastCheckedAt(Instant.now());
         integration.setTokenExpiresAt(expiresAt);
-
         return integrationRepository.save(integration);
     }
 
@@ -71,7 +66,8 @@ public class IntegrationService {
         integrationRepository.delete(integration);
     }
 
-    /** Used by node execution strategies to fetch a usable, decrypted access token for a provider. */
+    /** Returns a usable access token and refreshes Google credentials when they are expired or near expiry. */
+    @Transactional
     public String getDecryptedAccessToken(UUID userId, String provider) {
         Integration integration = integrationRepository.findByUserIdAndProvider(userId, provider)
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -79,6 +75,28 @@ public class IntegrationService {
 
         if (integration.getStatus() != IntegrationStatus.HEALTHY) {
             throw new ResourceNotFoundException("The " + provider + " integration is not healthy. Reconnect it on the Integrations page.");
+        }
+
+        if (isNearExpiry(integration.getTokenExpiresAt())) {
+            if (!isGoogleMailProvider(provider) || integration.getEncryptedRefreshToken() == null) {
+                markError(integration);
+                throw new IntegrationException("The " + provider + " access token has expired. Reconnect the integration.");
+            }
+            try {
+                String refreshToken = encryptionUtils.decrypt(integration.getEncryptedRefreshToken());
+                OAuthToken token = ((GoogleTokenExchange) oauthTokenExchangeRegistry.resolve(provider)).refresh(refreshToken);
+                integration.setEncryptedAccessToken(encryptionUtils.encrypt(token.accessToken()));
+                if (token.refreshToken() != null && !token.refreshToken().isBlank()) {
+                    integration.setEncryptedRefreshToken(encryptionUtils.encrypt(token.refreshToken()));
+                }
+                integration.setTokenExpiresAt(token.expiresAt());
+                integration.setStatus(IntegrationStatus.HEALTHY);
+                integration.setLastCheckedAt(Instant.now());
+                integrationRepository.save(integration);
+            } catch (Exception e) {
+                markError(integration);
+                throw new IntegrationException("The " + provider + " access token could not be refreshed. Reconnect the integration.", e);
+            }
         }
         return encryptionUtils.decrypt(integration.getEncryptedAccessToken());
     }
@@ -90,6 +108,20 @@ public class IntegrationService {
             i.setLastCheckedAt(Instant.now());
             integrationRepository.save(i);
         });
+    }
+
+    private boolean isNearExpiry(Instant expiresAt) {
+        return expiresAt != null && expiresAt.isBefore(Instant.now().plusSeconds(REFRESH_SKEW_SECONDS));
+    }
+
+    private boolean isGoogleMailProvider(String provider) {
+        return "gmail".equals(provider) || "google_sheets".equals(provider);
+    }
+
+    private void markError(Integration integration) {
+        integration.setStatus(IntegrationStatus.ERROR);
+        integration.setLastCheckedAt(Instant.now());
+        integrationRepository.save(integration);
     }
 
     private void validateProvider(String provider) {
