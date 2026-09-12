@@ -3,6 +3,7 @@ package com.autoworkflow.execution.condition;
 import com.autoworkflow.common.exception.IntegrationException;
 import com.autoworkflow.util.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.NullNode;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,7 @@ public class ConditionEvaluator {
 
     public boolean evaluate(JsonNode input, JsonNode condition) { return evaluateNode(input == null ? NullNode.getInstance() : input, normalize(condition), 0); }
     public void validate(JsonNode condition) { validateNode(normalize(condition), 0); }
+
     public JsonNode normalize(JsonNode condition) {
         if (condition == null || condition.isMissingNode() || condition.isNull()) throw config("Condition is required.");
         if (condition.isTextual()) {
@@ -72,11 +74,11 @@ public class ConditionEvaluator {
         if (expected == null || !expected.isTextual()) return expected;
         String text = expected.asText().trim();
         if (actual != null && actual.isNumber()) {
-            try { return JsonUtils.mapper().numberNode(new BigDecimal(text)); } catch (NumberFormatException ignored) { return expected; }
+            try { return JsonNodeFactory.instance.numberNode(new BigDecimal(text)); } catch (NumberFormatException ignored) { return expected; }
         }
         if (actual != null && actual.isBoolean()) {
-            if (text.equalsIgnoreCase("true")) return JsonUtils.mapper().booleanNode(true);
-            if (text.equalsIgnoreCase("false")) return JsonUtils.mapper().booleanNode(false);
+            if (text.equalsIgnoreCase("true")) return JsonNodeFactory.instance.booleanNode(true);
+            if (text.equalsIgnoreCase("false")) return JsonNodeFactory.instance.booleanNode(false);
         }
         return expected;
     }
