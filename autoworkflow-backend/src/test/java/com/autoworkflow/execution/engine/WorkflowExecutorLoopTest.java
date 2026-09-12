@@ -4,11 +4,9 @@ import com.autoworkflow.util.JsonUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class WorkflowExecutorLoopTest {
@@ -41,23 +39,24 @@ class WorkflowExecutorLoopTest {
         when(registry.resolve("continuation")).thenReturn(continuation);
 
         WorkflowExecutor executor = new WorkflowExecutor(registry);
-        JsonNode nodes = JsonUtils.mapper().readTree("[" +
-                "{\"id\":\"t\",\"type\":\"trigger\",\"data\":{}}," +
-                "{\"id\":\"l\",\"type\":\"loop\",\"data\":{\"arrayField\":\"items\",\"bodyStartNodeId\":\"b\",\"continuationNodeId\":\"c\"}}," +
-                "{\"id\":\"b\",\"type\":\"body\",\"data\":{}}," +
-                "{\"id\":\"c\",\"type\":\"continuation\",\"data\":{}}]");
-        JsonNode edges = JsonUtils.mapper().readTree("[" +
-                "{\"source\":\"t\",\"target\":\"l\"}," +
-                "{\"source\":\"l\",\"target\":\"b\",\"data\":{\"branch\":\"body\",\"loopRole\":\"body\"}}," +
-                "{\"source\":\"l\",\"target\":\"c\",\"data\":{\"branch\":\"continuation\",\"loopRole\":\"continuation\"}}," +
-                "{\"source\":\"b\",\"target\":\"c\",\"data\":{\"loopReturn\":true}}]");
+        JsonNode nodes = JsonUtils.mapper().readTree("[{" +
+                "\"id\":\"t\",\"type\":\"trigger\",\"data\":{}},{" +
+                "\"id\":\"l\",\"type\":\"loop\",\"data\":{\"arrayField\":\"items\",\"bodyStartNodeId\":\"b\",\"continuationNodeId\":\"c\"}},{" +
+                "\"id\":\"b\",\"type\":\"body\",\"data\":{}},{" +
+                "\"id\":\"c\",\"type\":\"continuation\",\"data\":{}}]");
+        JsonNode edges = JsonUtils.mapper().readTree("[{" +
+                "\"source\":\"t\",\"target\":\"l\"},{" +
+                "\"source\":\"l\",\"target\":\"b\",\"data\":{\"branch\":\"body\",\"loopRole\":\"body\"}},{" +
+                "\"source\":\"l\",\"target\":\"c\",\"data\":{\"branch\":\"continuation\",\"loopRole\":\"continuation\"}},{" +
+                "\"source\":\"b\",\"target\":\"c\",\"data\":{\"loopReturn\":true}}]");
         JsonNode input = JsonUtils.mapper().readTree("{\"items\":[{\"id\":1},{\"id\":2},{\"id\":3}]}");
 
         WorkflowExecutor.ExecutionRunResult result = executor.run(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), nodes, edges, input);
 
         assertThat(result.success()).isTrue();
         assertThat(result.finalOutput().path("done").asBoolean()).isTrue();
-        assertThat(result.finalOutput().path("results")).hasSize(3);
+        assertThat(result.finalOutput().path("results").isArray()).isTrue();
+        assertThat(result.finalOutput().path("results").size()).isEqualTo(3);
         assertThat(result.steps()).filteredOn(s -> "b".equals(s.getNodeId())).hasSize(3);
         assertThat(result.steps()).filteredOn(s -> "b".equals(s.getNodeId())).extracting(LogStep::getIterationIndex).containsExactly(0, 1, 2);
         assertThat(result.steps()).filteredOn(s -> "b".equals(s.getNodeId())).extracting(LogStep::getIterationCount).containsOnly(3);
