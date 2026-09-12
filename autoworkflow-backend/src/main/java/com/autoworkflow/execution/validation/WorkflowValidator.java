@@ -64,14 +64,16 @@ public class WorkflowValidator {
         for (String id : ids) incoming.put(id, 0);
         if (canvasEdges != null && canvasEdges.isArray()) for (JsonNode edge : canvasEdges) {
             String source = edge.path("source").asText("").trim(), target = edge.path("target").asText("").trim();
-            if (source.isBlank() || target.isBlank()) return WorkflowValidationResult.invalid("Workflow contains an edge with a missing or blank source/target.");
+            if (source.isBlank() && target.isBlank()) return WorkflowValidationResult.invalid("Workflow contains an edge with a missing or blank source and target.");
+            if (source.isBlank()) return WorkflowValidationResult.invalid("Workflow contains an edge with a missing or blank source.");
+            if (target.isBlank()) return WorkflowValidationResult.invalid("Workflow contains an edge with a missing or blank target.");
             if (!ids.contains(source) || !ids.contains(target)) return WorkflowValidationResult.invalid("Edge references a node that does not exist: '" + source + "' -> '" + target + "'.");
             String branch = edge.path("data").path("branch").asText(""), role = edge.path("data").path("loopRole").asText("");
             if (!edgeKeys.add(source + "->" + target + ":" + branch + ":" + role)) return WorkflowValidationResult.invalid("Duplicate edge detected from '" + source + "' to '" + target + "'.");
             graph.computeIfAbsent(source, k -> new ArrayList<>()).add(target); outgoing.computeIfAbsent(source, k -> new ArrayList<>()).add(edge); incoming.merge(target, 1, Integer::sum);
         }
         List<String> cycle = detectCyclePath(ids, graph);
-        if (cycle != null) return WorkflowValidationResult.invalid("Workflow contains a cycle: " + String.join(" -> ", cycle) + ". Loop bodies must not re-enter the Loop node.");
+        if (cycle != null) return WorkflowValidationResult.invalid("Cyclic execution is not supported. Workflow contains a cycle: " + String.join(" -> ", cycle) + ". Loop bodies must not re-enter the Loop node.");
         return validateAdvancedControlFlow(byId, types, incoming, outgoing);
     }
 
