@@ -12,167 +12,117 @@ import java.time.Instant;
 import java.util.*;
 
 /**
- * Walks a workflow's React Flow canvas (nodes + edges) starting from its trigger
- * node(s), executing each node's strategy in topological order and threading each
- * node's output as the next node's input payload.
+ * Deterministic graph orchestrator. Loop execution is implemented as a scoped re-entry
+ * into the existing graph runner, not as a second workflow engine. Each iteration gets
+ * isolated liveness/payload maps and an immutable iteration context.
  *
- * Trigger seeding:
- *   Only nodes whose strategy reports isTrigger()==true (webhook, cron_trigger,
- *   github_event, email_received — see NodeStrategy.isTrigger()) are seeded as
- *   execution start points. A node simply having zero incoming edges is NOT enough
- *   on its own — a disconnected/orphaned action node (e.g. a Slack node the user
- *   forgot to wire up) also has zero incoming edges and must never silently execute.
- *   If a workflow has no real trigger node at all, the run fails immediately with a
- *   clear message instead of guessing at a start point.
+ * Loop contract:
+ *   loop.data.arrayField            -> collection path
+ *   loop.data.bodyStartNodeId       -> first node inside the body
+ *   loop.data.continuationNodeId    -> node after all iterations
  *
- * Branching (IF Condition / AI Router):
- *   Only the outgoing edge whose `data.branch` ("true"/"false") matches the
- *   strategy's branchTaken result is followed. The other edge is "dead" — it will
- *   never deliver a payload.
- *
- * Merge / multi-input nodes — liveness propagation AND payload aggregation:
- *   A node with N incoming edges only executes once all N edges are *resolved*
- *   (each either delivered a payload, or is confirmed dead) AND at least one of
- *   them actually delivered. "Dead" propagates transitively: if a node ends up with
- *   zero delivered edges once all its incoming edges are resolved, the node itself
- *   is dead, and ALL of its own outgoing edges are marked dead too — recursively.
- *   This is what makes "Trigger -> If -(true)-> A -> Merge, If -(false)-> B -> Merge"
- *   work correctly: B is dead (its only incoming edge, the false branch, was never
- *   taken), so B's edge into Merge is *also* dead, so Merge only waits on the one
- *   edge that can actually still deliver (from A) — instead of waiting forever.
- *
- *   Every payload that actually arrives at a multi-input node is kept (not just the
- *   last one): a node with more than one incoming edge receives
- *   { "inputs": [ <branch 1 output>, <branch 2 output>, ... ] } as its input payload
- *   (delivery order), not whichever branch happened to finish last. See
- *   MergeStrategy for how it consumes this shape.
- *
- * continueOnFail:
- *   A node's `data.continueOnFail` (default false) controls what happens when IT
- *   fails. false (default, unchanged): the whole run stops immediately and is
- *   marked FAILED. true: the failure is still recorded in that node's LogStep
- *   (status=failed, error set) but execution continues; downstream nodes receive
- *   the failed node's *input* payload unchanged — a documented, deliberate policy
- *   (a soft-failed node behaves as a passthrough, not as if it produced new data it
- *   never actually computed). This is visible in the UI as "continued after failure"
- *   via the node's own LogStep status, not hidden.
+ * The body runner stops when it reaches continuationNodeId. Body edges targeting that
+ * node may be marked data.loopReturn=true; the continuation itself is never executed in
+ * the body scope. This keeps the persisted graph acyclic and prevents accidental re-entry.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class WorkflowExecutor {
-
     private final NodeStrategyRegistry registry;
 
     public ExecutionRunResult run(UUID userId, UUID workflowId, UUID executionId,
-                                   JsonNode canvasNodes, JsonNode canvasEdges, JsonNode triggerPayload) {
+                                  JsonNode canvasNodes, JsonNode canvasEdges, JsonNode triggerPayload) {
+        List<JsonNode> nodes = asList(canvasNodes);
+        List<JsonNode> edges = asList(canvasEdges);
+        Set<String> triggerIds = new LinkedHashSet<>();
+        for (JsonNode node : nodes) {
+            if (registry.isTriggerType(node.path("type").asText(""))) triggerIds.add(node.path("id").asText());
+        }
 
-        List<LogStep> steps = new ArrayList<>();
+        List<String> starts = new ArrayList<>();
+        Map<String, Integer> incoming = incomingCounts(nodes, edges);
+        for (JsonNode node : nodes) {
+            String id = node.path("id").asText();
+            if (incoming.getOrDefault(id, 0) == 0 && (!triggerIds.isEmpty() ? triggerIds.contains(id) : true)) starts.add(id);
+        }
+        if (starts.isEmpty()) {
+            return ExecutionRunResult.failed(List.of(), "Workflow has no valid starting node — every node has at least one incoming connection.");
+        }
+
+        ObjectNode seed = triggerPayload == null ? JsonUtils.mapper().createObjectNode() : triggerPayload;
+        ScopeResult result = executeScope(userId, workflowId, executionId, nodes, edges, starts, Map.of(), seed,
+                null, null, null, null, null, Set.of());
+        if (!result.success) return ExecutionRunResult.failed(result.steps, result.error);
+        return ExecutionRunResult.success(result.steps, result.finalOutput);
+    }
+
+    private ScopeResult executeScope(UUID userId, UUID workflowId, UUID executionId,
+                                     List<JsonNode> nodes, List<JsonNode> edges,
+                                     List<String> startIds, Map<String, JsonNode> seededInputs,
+                                     JsonNode defaultSeed, Integer iterationIndex, Integer iterationCount,
+                                     String iterationId, String parentLoopNodeId, String branchPath,
+                                     Set<String> stopBefore) {
         Map<String, JsonNode> nodeById = new HashMap<>();
-        Map<String, List<JsonNode>> outgoingEdges = new HashMap<>();
-
-        // Static, never mutated after this block: the real incoming-edge count per node.
+        Map<String, List<JsonNode>> outgoing = new HashMap<>();
         Map<String, Integer> totalIncoming = new HashMap<>();
-        // Mutated at runtime as edges resolve.
-        Map<String, Integer> arrivedCount = new HashMap<>();
+        Map<String, Integer> arrived = new HashMap<>();
         Map<String, Integer> deadIncoming = new HashMap<>();
-        // Every payload that has actually arrived at a node, in delivery order.
-        Map<String, List<JsonNode>> incomingPayloads = new HashMap<>();
-
-        canvasNodes.forEach(n -> {
-            String nid = n.get("id").asText();
-            nodeById.put(nid, n);
-            totalIncoming.putIfAbsent(nid, 0);
-            arrivedCount.putIfAbsent(nid, 0);
-            deadIncoming.putIfAbsent(nid, 0);
-        });
-
-        canvasEdges.forEach(e -> {
-            String source = e.get("source").asText();
-            String target = e.get("target").asText();
-            outgoingEdges.computeIfAbsent(source, k -> new ArrayList<>()).add(e);
+        Map<String, List<JsonNode>> payloads = new HashMap<>();
+        for (JsonNode n : nodes) {
+            String id = n.path("id").asText();
+            nodeById.put(id, n);
+            totalIncoming.put(id, 0);
+            arrived.put(id, 0);
+            deadIncoming.put(id, 0);
+        }
+        for (JsonNode e : edges) {
+            String source = e.path("source").asText();
+            String target = e.path("target").asText();
+            if (!nodeById.containsKey(source) || !nodeById.containsKey(target)) continue;
+            outgoing.computeIfAbsent(source, k -> new ArrayList<>()).add(e);
             totalIncoming.merge(target, 1, Integer::sum);
-        });
+        }
 
         Set<String> visited = new HashSet<>();
         Set<String> queued = new HashSet<>();
         Set<String> dead = new HashSet<>();
         Deque<String> queue = new ArrayDeque<>();
+        List<LogStep> steps = new ArrayList<>();
+        final String[] lastOutput = {defaultSeed == null ? JsonUtils.mapper().createObjectNode() : defaultSeed};
+        final ScopeResult[] failure = {null};
 
-        // Recursively resolves one incoming edge of `target`: either it delivered a real
-        // payload, or it's confirmed dead. Once every incoming edge of a node is resolved,
-        // the node either becomes ready to run (>=1 delivered) or becomes dead itself
-        // (0 delivered), and dead nodes propagate deadness to their own outgoing edges.
-        class EdgeResolver {
+        class Resolver {
             void resolve(String target, boolean delivered, JsonNode payload) {
-                if (visited.contains(target) || dead.contains(target)) return;
-
+                if (stopBefore.contains(target) || visited.contains(target) || dead.contains(target)) return;
                 if (delivered) {
-                    incomingPayloads.computeIfAbsent(target, k -> new ArrayList<>()).add(payload);
-                    arrivedCount.merge(target, 1, Integer::sum);
+                    payloads.computeIfAbsent(target, k -> new ArrayList<>()).add(payload);
+                    arrived.merge(target, 1, Integer::sum);
                 } else {
                     deadIncoming.merge(target, 1, Integer::sum);
                 }
-
-                int resolved = arrivedCount.getOrDefault(target, 0) + deadIncoming.getOrDefault(target, 0);
+                int resolved = arrived.getOrDefault(target, 0) + deadIncoming.getOrDefault(target, 0);
                 int total = totalIncoming.getOrDefault(target, 0);
-
-                if (total == 0) return; // trigger nodes are seeded directly, not via edges
-
+                if (total == 0) return;
                 if (resolved >= total) {
-                    if (arrivedCount.getOrDefault(target, 0) > 0) {
-                        if (!queued.contains(target)) {
-                            queue.add(target);
-                            queued.add(target);
-                        }
+                    if (arrived.getOrDefault(target, 0) > 0) {
+                        if (queued.add(target)) queue.add(target);
                     } else {
-                        // Every incoming edge is dead and none ever delivered -> this node
-                        // itself can never run. Propagate deadness to its own outgoing edges.
                         dead.add(target);
-                        for (JsonNode edge : outgoingEdges.getOrDefault(target, List.of())) {
-                            resolve(edge.get("target").asText(), false, null);
+                        for (JsonNode e : outgoing.getOrDefault(target, List.of())) {
+                            resolve(e.path("target").asText(), false, null);
                         }
                     }
                 }
             }
         }
-        EdgeResolver resolver = new EdgeResolver();
+        Resolver resolver = new Resolver();
 
-        List<String> triggerIds = new ArrayList<>();
-        List<String> zeroIncomingNodeIds = new ArrayList<>();
-        for (String nodeId : nodeById.keySet()) {
-            if (totalIncoming.getOrDefault(nodeId, 0) != 0) continue;
-            zeroIncomingNodeIds.add(nodeId);
-            String nodeType = nodeById.get(nodeId).get("type").asText();
-            if (registry.isTriggerType(nodeType)) {
-                triggerIds.add(nodeId);
-            }
-        }
-
-        // Start points: a real trigger node, if one exists — a deployed, webhook/cron-
-        // triggered execution always has one (deployment validation guarantees it, see
-        // WorkflowValidator.validateForDeployment), so this branch is what actually runs
-        // for those. If no real trigger exists at all, this is a manual/test execution of
-        // a workflow that doesn't need one (e.g. a standalone Summarizer configured with
-        // Direct Input Text) — WorkflowValidator.validateForExecution already allows this
-        // structurally, so here every zero-incoming node becomes a valid manual start
-        // point instead of failing. Note the difference from a *disconnected* non-trigger
-        // node sitting alongside a real trigger elsewhere in the graph (e.g. a stray Slack
-        // node the user forgot to wire up) — that case still falls through the first
-        // branch below and is correctly left unseeded, since triggerIds is non-empty then.
-        List<String> startNodeIds;
-        if (!triggerIds.isEmpty()) {
-            startNodeIds = triggerIds;
-        } else if (!zeroIncomingNodeIds.isEmpty()) {
-            startNodeIds = zeroIncomingNodeIds;
-        } else {
-            return ExecutionRunResult.failed(steps,
-                    "Workflow has no valid starting node — every node has at least one incoming connection.");
-        }
-
-        for (String startId : startNodeIds) {
-            incomingPayloads.put(startId, new ArrayList<>(List.of(triggerPayload)));
-            arrivedCount.put(startId, 1);
+        for (String startId : startIds) {
+            if (!nodeById.containsKey(startId) || stopBefore.contains(startId)) continue;
+            JsonNode seed = seededInputs.getOrDefault(startId, defaultSeed);
+            payloads.put(startId, new ArrayList<>(List.of(seed == null ? JsonUtils.mapper().createObjectNode() : seed)));
+            arrived.put(startId, 1);
             queue.add(startId);
             queued.add(startId);
         }
@@ -180,76 +130,148 @@ public class WorkflowExecutor {
         while (!queue.isEmpty()) {
             String nodeId = queue.poll();
             queued.remove(nodeId);
-            if (visited.contains(nodeId)) continue;
+            if (visited.contains(nodeId) || stopBefore.contains(nodeId)) continue;
             visited.add(nodeId);
 
             JsonNode node = nodeById.get(nodeId);
-            String nodeType = node.get("type").asText();
-            JsonNode nodeData = node.has("data") ? node.get("data") : JsonUtils.mapper().createObjectNode();
-            boolean continueOnFail = nodeData.path("continueOnFail").asBoolean(false);
-
-            JsonNode input = buildInput(nodeId, totalIncoming, incomingPayloads);
-
+            String nodeType = node.path("type").asText();
+            JsonNode config = node.has("data") ? node.get("data") : JsonUtils.mapper().createObjectNode();
+            JsonNode input = buildInput(nodeId, totalIncoming, payloads);
             Instant start = Instant.now();
             NodeExecutionResult result;
             try {
-                NodeStrategy strategy = registry.resolve(nodeType);
-                result = strategy.execute(new NodeExecutionContext(userId, workflowId, executionId, nodeId, nodeType, nodeData, input));
+                result = registry.resolve(nodeType).execute(new NodeExecutionContext(
+                        userId, workflowId, executionId, nodeId, nodeType, config, input,
+                        iterationIndex, iterationCount, iterationId, parentLoopNodeId, branchPath));
             } catch (Exception e) {
-                result = NodeExecutionResult.failed(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+                result = NodeExecutionResult.failed(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             }
             Instant end = Instant.now();
-            long durationMs = end.toEpochMilli() - start.toEpochMilli();
-
-            String label = nodeData.has("label") ? nodeData.get("label").asText() : nodeType;
-            steps.add(new LogStep(nodeId, label, result.success() ? "success" : "failed", start, end, input, result.outputPayload(), result.error(), durationMs));
+            String label = config.path("label").asText(nodeType);
+            steps.add(new LogStep(nodeId, label, result.success() ? "success" : "failed", start, end,
+                    input, result.outputPayload(), result.error(), end.toEpochMilli() - start.toEpochMilli(),
+                    iterationIndex, iterationCount, iterationId, parentLoopNodeId, branchPath));
 
             if (!result.success()) {
-                if (!continueOnFail) {
-                    return ExecutionRunResult.failed(steps, "Node '" + label + "' failed: " + result.error());
+                if (!config.path("continueOnFail").asBoolean(false)) {
+                    return ScopeResult.failed(steps, "Node '" + label + "' failed: " + result.error());
                 }
-                log.warn("Node '{}' failed but continueOnFail=true; continuing execution. Downstream receives this node's input unchanged. Error: {}", label, result.error());
+                log.warn("Node '{}' failed but continueOnFail=true; continuing.", label);
+            }
+            JsonNode output = result.success() ? result.outputPayload() : input;
+            lastOutput[0] = output;
+
+            if ("loop".equals(nodeType) && result.success()) {
+                ScopeResult loopResult = executeLoop(userId, workflowId, executionId, nodes, edges, nodeId,
+                        config, output, steps, iterationIndex, iterationCount, iterationId, parentLoopNodeId, branchPath);
+                if (!loopResult.success) return loopResult;
+                steps = new ArrayList<>(loopResult.steps);
+                lastOutput[0] = loopResult.finalOutput;
+                continue;
             }
 
-            JsonNode outputForDownstream = result.success() ? result.outputPayload() : input;
-
-            for (JsonNode edge : outgoingEdges.getOrDefault(nodeId, List.of())) {
-                String targetId = edge.get("target").asText();
-                boolean edgeTaken = true;
-                if (result.success() && edge.has("data") && edge.get("data").has("branch")) {
-                    String edgeBranchRaw = edge.get("data").get("branch").asText();
-                    if (result.branchKey() != null) {
-                        edgeTaken = edgeBranchRaw.equals(result.branchKey());
-                    } else if (result.branchTaken() != null) {
-                        edgeTaken = Boolean.parseBoolean(edgeBranchRaw) == result.branchTaken();
-                    }
-                }
-                resolver.resolve(targetId, edgeTaken, outputForDownstream);
+            for (JsonNode edge : outgoing.getOrDefault(nodeId, List.of())) {
+                String target = edge.path("target").asText();
+                String edgeBranch = edge.path("data").path("branch").asText("");
+                boolean taken = true;
+                if (result.success() && result.branchKey() != null) taken = result.branchKey().equals(edgeBranch);
+                else if (result.success() && result.branchTaken() != null && !edgeBranch.isBlank()) taken = Boolean.parseBoolean(edgeBranch) == result.branchTaken();
+                if (stopBefore.contains(target)) continue;
+                resolver.resolve(target, taken, output);
             }
         }
-
-        JsonNode finalOutput = steps.isEmpty() ? JsonUtils.mapper().createObjectNode() : steps.get(steps.size() - 1).getOutputPayload();
-        return ExecutionRunResult.success(steps, finalOutput);
+        if (failure[0] != null) return failure[0];
+        return ScopeResult.success(steps, lastOutput[0]);
     }
 
-    /**
-     * A node with 0-1 incoming edges gets the single delivered payload directly (or an
-     * empty object if somehow none arrived). A node with >1 incoming edges (Merge, or any
-     * future multi-input node type) gets every payload that arrived, wrapped as
-     * { "inputs": [...] }, in delivery order — see class javadoc and MergeStrategy.
-     */
-    private JsonNode buildInput(String nodeId, Map<String, Integer> totalIncoming, Map<String, List<JsonNode>> incomingPayloads) {
-        List<JsonNode> payloads = incomingPayloads.getOrDefault(nodeId, List.of());
-        int total = totalIncoming.getOrDefault(nodeId, 0);
+    private ScopeResult executeLoop(UUID userId, UUID workflowId, UUID executionId,
+                                    List<JsonNode> nodes, List<JsonNode> edges, String loopNodeId,
+                                    JsonNode config, JsonNode loopOutput, List<LogStep> accumulated,
+                                    Integer outerIterationIndex, Integer outerIterationCount,
+                                    String outerIterationId, String outerParentLoop, String outerBranchPath) {
+        JsonNode itemsNode = loopOutput.path("items");
+        if (!itemsNode.isArray()) return ScopeResult.failed(accumulated, "Loop node did not produce an array of items.");
 
-        if (total <= 1) {
-            return payloads.isEmpty() ? JsonUtils.mapper().createObjectNode() : payloads.get(0);
+        String bodyStart = config.path("bodyStartNodeId").asText("").trim();
+        String continuation = config.path("continuationNodeId").asText("").trim();
+        if (itemsNode.size() > 0 && (bodyStart.isEmpty() || continuation.isEmpty())) {
+            return ScopeResult.failed(accumulated, "Loop requires 'bodyStartNodeId' and 'continuationNodeId' when executing a non-empty collection.");
+        }
+        if (!bodyStart.isEmpty() && nodes.stream().noneMatch(n -> bodyStart.equals(n.path("id").asText()))) {
+            return ScopeResult.failed(accumulated, "Loop bodyStartNodeId '" + bodyStart + "' does not exist.");
+        }
+        if (!continuation.isEmpty() && nodes.stream().noneMatch(n -> continuation.equals(n.path("id").asText()))) {
+            return ScopeResult.failed(accumulated, "Loop continuationNodeId '" + continuation + "' does not exist.");
         }
 
+        ArrayNode results = JsonUtils.mapper().createArrayNode();
+        for (int i = 0; i < itemsNode.size(); i++) {
+            JsonNode item = itemsNode.get(i);
+            ObjectNode iterationInput = JsonUtils.mapper().createObjectNode();
+            iterationInput.set("item", item.deepCopy());
+            iterationInput.put("index", i);
+            iterationInput.put("count", itemsNode.size());
+            String iterationId = executionId + ":" + loopNodeId + ":" + i;
+            String scopedBranch = appendBranch(outerBranchPath, "loop[" + i + "]");
+
+            ScopeResult body = executeScope(userId, workflowId, executionId, nodes, edges,
+                    List.of(bodyStart), Map.of(), iterationInput, i, itemsNode.size(), iterationId,
+                    loopNodeId, scopedBranch, Set.of(continuation));
+            accumulated = new ArrayList<>(accumulated);
+            accumulated.addAll(body.steps);
+            if (!body.success) return ScopeResult.failed(accumulated, body.error);
+            results.add(body.finalOutput == null ? JsonUtils.mapper().nullNode() : body.finalOutput);
+        }
+
+        ObjectNode collected = JsonUtils.mapper().createObjectNode();
+        collected.set("items", itemsNode.deepCopy());
+        collected.put("count", itemsNode.size());
+        collected.set("results", results);
+        if (itemsNode.isEmpty()) {
+            collected.set("results", JsonUtils.mapper().createArrayNode());
+        }
+
+        if (!continuation.isEmpty()) {
+            ScopeResult continuationResult = executeScope(userId, workflowId, executionId, nodes, edges,
+                    List.of(continuation), Map.of(), collected, outerIterationIndex, outerIterationCount,
+                    outerIterationId, outerParentLoop, appendBranch(outerBranchPath, "loop.continuation"), Set.of());
+            accumulated = new ArrayList<>(accumulated);
+            accumulated.addAll(continuationResult.steps);
+            if (!continuationResult.success) return ScopeResult.failed(accumulated, continuationResult.error);
+            return ScopeResult.success(accumulated, continuationResult.finalOutput);
+        }
+        return ScopeResult.success(accumulated, collected);
+    }
+
+    private String appendBranch(String current, String next) {
+        return current == null || current.isBlank() ? next : current + " > " + next;
+    }
+
+    private JsonNode buildInput(String nodeId, Map<String, Integer> totalIncoming, Map<String, List<JsonNode>> payloads) {
+        List<JsonNode> values = payloads.getOrDefault(nodeId, List.of());
+        if (totalIncoming.getOrDefault(nodeId, 0) <= 1) return values.isEmpty() ? JsonUtils.mapper().createObjectNode() : values.get(0);
         ObjectNode wrapper = JsonUtils.mapper().createObjectNode();
-        ArrayNode inputsArray = wrapper.putArray("inputs");
-        payloads.forEach(inputsArray::add);
+        ArrayNode inputs = wrapper.putArray("inputs");
+        values.forEach(inputs::add);
         return wrapper;
+    }
+
+    private Map<String, Integer> incomingCounts(List<JsonNode> nodes, List<JsonNode> edges) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (JsonNode n : nodes) counts.put(n.path("id").asText(), 0);
+        for (JsonNode e : edges) counts.merge(e.path("target").asText(), 1, Integer::sum);
+        return counts;
+    }
+
+    private List<JsonNode> asList(JsonNode node) {
+        List<JsonNode> out = new ArrayList<>();
+        if (node != null && node.isArray()) node.forEach(out::add);
+        return out;
+    }
+
+    private record ScopeResult(boolean success, List<LogStep> steps, JsonNode finalOutput, String error) {
+        static ScopeResult success(List<LogStep> steps, JsonNode output) { return new ScopeResult(true, steps, output, null); }
+        static ScopeResult failed(List<LogStep> steps, String error) { return new ScopeResult(false, steps, null, error); }
     }
 
     public record ExecutionRunResult(boolean success, List<LogStep> steps, JsonNode finalOutput, String error) {
