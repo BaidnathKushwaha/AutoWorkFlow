@@ -13,19 +13,17 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class IfConditionStrategy implements NodeStrategy {
     private final ConditionEvaluator conditionEvaluator;
-
     @Override public String getTypeKey() { return "if_condition"; }
 
     @Override
     public NodeExecutionResult execute(NodeExecutionContext ctx) {
         JsonNode config = ctx.getNodeConfig();
         JsonNode input = ctx.getInputPayload();
-
         JsonNode condition = config.has("condition") ? config.get("condition") : config;
         try {
-            conditionEvaluator.validate(condition);
-            boolean result = conditionEvaluator.evaluate(input, condition);
-            return NodeExecutionResult.okWithBranch(input, result);
+            JsonNode normalized = conditionEvaluator.normalize(condition);
+            conditionEvaluator.validate(normalized);
+            return NodeExecutionResult.okWithBranch(input, conditionEvaluator.evaluate(input, normalized));
         } catch (RuntimeException e) {
             return NodeExecutionResult.failed(e.getMessage() == null ? "Invalid IF condition configuration." : e.getMessage());
         }
