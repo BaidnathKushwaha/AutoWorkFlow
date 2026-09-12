@@ -12,7 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 
 /** Safe declarative transformation. No executable expressions or user code. */
 @Component
@@ -48,8 +51,8 @@ public class TransformStrategy implements NodeStrategy {
                 setPath(output, e.getKey(), conditionEvaluator.resolvePath(input, source).deepCopy());
             }
         } else {
-            output.setAll(input != null && input.isObject() ? (ObjectNode) input.deepCopy() : JsonUtils.mapper().createObjectNode());
-            if (input != null && !input.isObject()) return NodeExecutionResult.ok(input);
+            if (input != null && input.isObject()) output.setAll((ObjectNode) input.deepCopy());
+            else if (input != null) return NodeExecutionResult.ok(input);
         }
 
         JsonNode conversions = parseJson(config.path("conversions"), "conversions");
@@ -84,43 +87,59 @@ public class TransformStrategy implements NodeStrategy {
             JsonNode fields = map.get("fields");
             if (!array.isArray() || fields == null || !fields.isObject()) return NodeExecutionResult.failed("Transform map requires arrayPath and a fields object.");
             ArrayNode mapped = JsonUtils.mapper().createArrayNode();
-            array.forEach(item -> {
+            Map<String, JsonNode> fieldMap = new LinkedHashMap<>();
+            Iterator<Map.Entry<String, JsonNode>> fieldsIt = fields.fields();
+            while (fieldsIt.hasNext()) {
+                Map.Entry<String, JsonNode> e = fieldsIt.next();
+                fieldMap.put(e.getKey(), e.getValue());
+            }
+            for (JsonNode item : array) {
                 ObjectNode row = JsonUtils.mapper().createObjectNode();
-                fields.fields().forEachRemaining(e -> row.set(e.getKey(), conditionEvaluator.resolvePath(item, e.getValue().asText()).deepCopy()));
+                for (Map.Entry<String, JsonNode> e : fieldMap.entrySet()) {
+                    row.set(e.getKey(), conditionEvaluator.resolvePath(item, e.getValue().asText()).deepCopy());
+                }
                 mapped.add(row);
-            });
+            }
             setPath(output, path, mapped);
         }
         return NodeExecutionResult.ok(output);
     }
 
     private JsonNode parseJson(JsonNode value, String name) {
-        if (value == null || value.isMissingNode() || value.isNull() || value.asText("").isBlank()) return null;
+        if (value == null || value.isMissingNode() || value.isNull()) return null;
+        if (value.isTextual() && value.asText().isBlank()) return null;
         if (value.isObject() || value.isArray()) return value;
         try { return JsonUtils.mapper().readTree(value.asText()); }
         catch (Exception e) { throw new IllegalArgumentException("Transform " + name + " must contain valid JSON."); }
     }
 
     private JsonNode convert(JsonNode value, String type) {
-        return switch (type.trim().toLowerCase(Locale.ROOT)) {
-            case "text", "string" -> JsonUtils.mapper().textNode(value.isTextual() ? value.asText() : value.toString());
-            case "number", "decimal" -> {
-                try { yield JsonUtils.mapper().numberNode(new BigDecimal(value.asText())); } catch (Exception e) { yield null; }
-            }
-            case "integer", "int" -> {
-                try { yield JsonUtils.mapper().numberNode(Integer.parseInt(value.asText())); } catch (Exception e) { yield null; }
-            }
-            case "boolean", "bool" -> {
-                if (value.isBoolean()) yield value;
-                if (value.isTextual() && (value.asText().equalsIgnoreCase("true") || value.asText().equalsIgnoreCase("false"))) yield JsonUtils.mapper().booleanNode(Boolean.parseBoolean(value.asText()));
-                yield null;
-            }
-            default -> null;
-        };
+        String normalized = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
+        switch (normalized) {
+            case "text":
+            case "string":
+                return JsonUtils.mapper().textNode(value.isTextual() ? value.asText() : value.toString());
+            case "number":
+            case "decimal":
+                try { return JsonUtils.mapper().getNodeFactory().numberNode(new BigDecimal(value.asText())); }
+                catch (Exception e) { return null; }
+            case "integer":
+            case "int":
+                try { return JsonUtils.mapper().getNodeFactory().numberNode(Integer.parseInt(value.asText())); }
+                catch (Exception e) { return null; }
+            case "boolean":
+            case "bool":
+                if (value.isBoolean()) return value;
+                if (value.isTextual() && (value.asText().equalsIgnoreCase("true") || value.asText().equalsIgnoreCase("false"))) return JsonUtils.mapper().getNodeFactory().booleanNode(Boolean.parseBoolean(value.asText()));
+                return null;
+            default:
+                return null;
+        }
     }
 
     private void setPath(ObjectNode root, String path, JsonNode value) {
         String[] parts = path.split("\\.");
+        if (parts.length == 0 || parts[0].isBlank()) throw new IllegalArgumentException("Transform output path is invalid.");
         ObjectNode current = root;
         for (int i = 0; i < parts.length - 1; i++) {
             if (parts[i].isBlank()) throw new IllegalArgumentException("Transform output path contains an empty segment.");
