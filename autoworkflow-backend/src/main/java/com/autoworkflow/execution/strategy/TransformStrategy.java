@@ -20,6 +20,9 @@ import java.util.*;
 public class TransformStrategy implements NodeStrategy {
     private final ConditionEvaluator conditionEvaluator;
 
+    /** Backward-compatible constructor for existing unit tests and direct callers. */
+    public TransformStrategy() { this(new ConditionEvaluator()); }
+
     @Override public String getTypeKey() { return "transform"; }
 
     @Override
@@ -92,9 +95,7 @@ public class TransformStrategy implements NodeStrategy {
             }
             for (JsonNode item : array) {
                 ObjectNode row = JsonUtils.mapper().createObjectNode();
-                for (Map.Entry<String, JsonNode> e : fieldMap.entrySet()) {
-                    row.set(e.getKey(), conditionEvaluator.resolvePath(item, e.getValue().asText()).deepCopy());
-                }
+                for (Map.Entry<String, JsonNode> e : fieldMap.entrySet()) row.set(e.getKey(), conditionEvaluator.resolvePath(item, e.getValue().asText()).deepCopy());
                 mapped.add(row);
             }
             setPath(output, path, mapped);
@@ -113,24 +114,16 @@ public class TransformStrategy implements NodeStrategy {
     private JsonNode convert(JsonNode value, String type) {
         String normalized = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
         switch (normalized) {
-            case "text":
-            case "string":
-                return JsonUtils.mapper().getNodeFactory().textNode(value.isTextual() ? value.asText() : value.toString());
-            case "number":
-            case "decimal":
-                try { return JsonUtils.mapper().getNodeFactory().numberNode(new BigDecimal(value.asText())); }
-                catch (Exception e) { return null; }
-            case "integer":
-            case "int":
-                try { return JsonUtils.mapper().getNodeFactory().numberNode(Integer.parseInt(value.asText())); }
-                catch (Exception e) { return null; }
-            case "boolean":
-            case "bool":
+            case "text": case "string": return JsonUtils.mapper().getNodeFactory().textNode(value.isTextual() ? value.asText() : value.toString());
+            case "number": case "decimal":
+                try { return JsonUtils.mapper().getNodeFactory().numberNode(new BigDecimal(value.asText())); } catch (Exception e) { return null; }
+            case "integer": case "int":
+                try { return JsonUtils.mapper().getNodeFactory().numberNode(Integer.parseInt(value.asText())); } catch (Exception e) { return null; }
+            case "boolean": case "bool":
                 if (value.isBoolean()) return value;
                 if (value.isTextual() && (value.asText().equalsIgnoreCase("true") || value.asText().equalsIgnoreCase("false"))) return JsonUtils.mapper().getNodeFactory().booleanNode(Boolean.parseBoolean(value.asText()));
                 return null;
-            default:
-                return null;
+            default: return null;
         }
     }
 
@@ -141,10 +134,7 @@ public class TransformStrategy implements NodeStrategy {
         for (int i = 0; i < parts.length - 1; i++) {
             if (parts[i].isBlank()) throw new IllegalArgumentException("Transform output path contains an empty segment.");
             JsonNode child = current.get(parts[i]);
-            if (!(child instanceof ObjectNode)) {
-                child = JsonUtils.mapper().createObjectNode();
-                current.set(parts[i], child);
-            }
+            if (!(child instanceof ObjectNode)) { child = JsonUtils.mapper().createObjectNode(); current.set(parts[i], child); }
             current = (ObjectNode) child;
         }
         current.set(parts[parts.length - 1], value == null ? JsonUtils.mapper().getNodeFactory().nullNode() : value);
