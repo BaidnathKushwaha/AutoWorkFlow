@@ -46,6 +46,7 @@ public class ConditionEvaluator {
         JsonNode actual = field.isEmpty() ? input : resolvePath(input, field);
         JsonNode expected = node.get("value");
         if (!VALUE_FREE.contains(operator) && expected == null) throw config("Condition operator '" + operator + "' requires a value.");
+        expected = typedExpected(actual, expected);
         return switch (operator) {
             case "equals" -> equals(actual, expected);
             case "not_equals" -> !equals(actual, expected);
@@ -65,6 +66,19 @@ public class ConditionEvaluator {
             case "is_false" -> !requireBoolean(actual, operator);
             default -> throw config("Unsupported condition operator: '" + operator + "'.");
         };
+    }
+
+    private JsonNode typedExpected(JsonNode actual, JsonNode expected) {
+        if (expected == null || !expected.isTextual()) return expected;
+        String text = expected.asText().trim();
+        if (actual != null && actual.isNumber()) {
+            try { return JsonUtils.mapper().numberNode(new BigDecimal(text)); } catch (NumberFormatException ignored) { return expected; }
+        }
+        if (actual != null && actual.isBoolean()) {
+            if (text.equalsIgnoreCase("true")) return JsonUtils.mapper().booleanNode(true);
+            if (text.equalsIgnoreCase("false")) return JsonUtils.mapper().booleanNode(false);
+        }
+        return expected;
     }
 
     private void validateNode(JsonNode node, int depth) {
@@ -99,7 +113,7 @@ public class ConditionEvaluator {
     }
 
     private boolean equals(JsonNode actual, JsonNode expected) {
-        if (actual.isMissingNode()) return expected == null || expected.isNull();
+        if (actual.isMissingNode()) return false;
         if (expected == null || expected.isNull()) return actual.isNull();
         if (actual.isNumber() && expected.isNumber()) return actual.decimalValue().compareTo(expected.decimalValue()) == 0;
         if (actual.isTextual() && expected.isTextual()) return actual.textValue().equals(expected.textValue());
