@@ -6,22 +6,8 @@ import { useExecutionStore } from '../store/executionStore'
 export default function ExecutionDetail() {
   const { id } = useParams()
   const { currentExecution, loadingDetail, fetchExecutionById, setSelectedExecutionId } = useExecutionStore()
-
-  useEffect(() => {
-    if (id) {
-      setSelectedExecutionId(id)
-      fetchExecutionById(id)
-    }
-  }, [id, fetchExecutionById, setSelectedExecutionId])
-
-  if (loadingDetail) {
-    return (
-      <div style={{ padding: '64px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        <RefreshCw size={28} className="spin" style={{ marginBottom: '16px', color: 'var(--accent)' }} />
-        <div>Loading execution details...</div>
-      </div>
-    )
-  }
+  useEffect(() => { if (id) { setSelectedExecutionId(id); fetchExecutionById(id) } }, [id, fetchExecutionById, setSelectedExecutionId])
+  if (loadingDetail) return <div style={{ padding: '64px', textAlign: 'center', color: 'var(--text-secondary)' }}><RefreshCw size={28} className="spin" style={{ marginBottom: '16px', color: 'var(--accent)' }} /><div>Loading execution details...</div></div>
 
   const exe = currentExecution || { id, workflow: 'Workflow Execution', status: 'success', duration: '0s', trigger: 'MANUAL', timestamp: 'Recently', stepsLogs: [] }
   const isSuccess = exe.status === 'success' || exe.status === 'SUCCESS'
@@ -54,11 +40,18 @@ export default function ExecutionDetail() {
             {steps.map((step, idx) => {
               const stepSuccess = !step.error && (step.status === 'success' || step.status === 'SUCCESS' || !step.status)
               const stepDuration = step.startTime && step.endTime ? (() => { const ms = new Date(step.endTime) - new Date(step.startTime); return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s` })() : ''
+              const scoped = step.iterationIndex !== null && step.iterationIndex !== undefined
               return <div key={idx} style={{ display: 'flex', gap: '24px', position: 'relative', zIndex: 10 }}>
                 <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--bg-surface)', border: `2px solid ${stepSuccess ? 'var(--accent-emerald)' : 'var(--accent-rose)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{stepSuccess ? <CheckCircle size={18} color="var(--accent-emerald)" /> : <XCircle size={18} color="var(--accent-rose)" />}</div>
                 <div className="card" style={{ flex: 1, padding: '16px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}><h3 style={{ fontSize: '14px', fontWeight: 600 }}>{step.nodeName || step.nodeId || `Step ${idx + 1}`}</h3>{stepDuration && <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{stepDuration}</span>}</div>
-                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>Node ID: <code style={{ fontFamily: 'monospace' }}>{step.nodeId}</code></p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>Node ID: <code style={{ fontFamily: 'monospace' }}>{step.nodeId}</code></p>
+                  {scoped && <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <span style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '5px', padding: '3px 7px', fontSize: '11px', fontFamily: 'monospace' }}>Iteration {step.iterationIndex + 1}/{step.iterationCount}</span>
+                    {step.iterationId && <span style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '5px', padding: '3px 7px', fontSize: '11px', fontFamily: 'monospace' }}>ID: {step.iterationId}</span>}
+                    {step.parentLoopNodeId && <span style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '5px', padding: '3px 7px', fontSize: '11px' }}>Loop: {step.parentLoopNodeId}</span>}
+                  </div>}
+                  {step.branchPath && <div style={{ marginBottom: '10px', fontSize: '11px', color: 'var(--text-muted)' }}>Branch path: <code>{step.branchPath}</code></div>}
                   {step.inputPayload && <div style={{ marginBottom: '8px' }}><div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Input Payload</div><pre style={{ background: 'var(--bg-input)', padding: '10px 12px', borderRadius: '8px', fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-secondary)', overflowX: 'auto', margin: 0 }}>{typeof step.inputPayload === 'string' ? step.inputPayload : JSON.stringify(step.inputPayload, null, 2)}</pre></div>}
                   {step.outputPayload && <div><div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>Output Payload</div><pre style={{ background: 'var(--bg-input)', padding: '10px 12px', borderRadius: '8px', fontSize: '12px', fontFamily: 'monospace', color: 'var(--accent-emerald)', overflowX: 'auto', margin: 0 }}>{typeof step.outputPayload === 'string' ? step.outputPayload : JSON.stringify(step.outputPayload, null, 2)}</pre></div>}
                   {step.error && <div style={{ marginTop: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-rose)', padding: '10px 12px', borderRadius: '8px', fontSize: '12px', color: 'var(--accent-rose)' }}><strong>Step Error:</strong> {step.error}</div>}
