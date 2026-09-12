@@ -12,10 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /** Safe declarative transformation. No executable expressions or user code. */
 @Component
@@ -39,7 +36,7 @@ public class TransformStrategy implements NodeStrategy {
                 if (target.isEmpty() || source.isEmpty()) return NodeExecutionResult.failed("Transform mapping requires non-empty output and source paths.");
                 JsonNode value = conditionEvaluator.resolvePath(input, source);
                 String strip = row.path("strip").asText("");
-                if (!strip.isEmpty() && value.isTextual() && value.asText().startsWith(strip)) value = JsonUtils.mapper().textNode(value.asText().substring(strip.length()));
+                if (!strip.isEmpty() && value.isTextual() && value.asText().startsWith(strip)) value = JsonUtils.mapper().getNodeFactory().textNode(value.asText().substring(strip.length()));
                 setPath(output, target, value.deepCopy());
             }
         } else if (config.path("mapping").isObject() && config.path("mapping").size() > 0) {
@@ -118,7 +115,7 @@ public class TransformStrategy implements NodeStrategy {
         switch (normalized) {
             case "text":
             case "string":
-                return JsonUtils.mapper().textNode(value.isTextual() ? value.asText() : value.toString());
+                return JsonUtils.mapper().getNodeFactory().textNode(value.isTextual() ? value.asText() : value.toString());
             case "number":
             case "decimal":
                 try { return JsonUtils.mapper().getNodeFactory().numberNode(new BigDecimal(value.asText())); }
@@ -150,6 +147,6 @@ public class TransformStrategy implements NodeStrategy {
             }
             current = (ObjectNode) child;
         }
-        current.set(parts[parts.length - 1], value == null ? JsonUtils.mapper().nullNode() : value);
+        current.set(parts[parts.length - 1], value == null ? JsonUtils.mapper().getNodeFactory().nullNode() : value);
     }
 }
