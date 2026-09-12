@@ -14,6 +14,11 @@ import org.springframework.stereotype.Component;
 public class SwitchStrategy implements NodeStrategy {
     private final ConditionEvaluator conditionEvaluator;
 
+    /** Backward-compatible constructor for existing unit tests and direct callers. */
+    public SwitchStrategy() {
+        this(new ConditionEvaluator());
+    }
+
     @Override public String getTypeKey() { return "switch"; }
 
     @Override
