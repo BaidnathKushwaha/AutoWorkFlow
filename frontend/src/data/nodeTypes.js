@@ -1,12 +1,4 @@
-// All node types available in the palette.
-//
-// IMPORTANT: `type` values here are the CANONICAL node type keys and must match
-// the backend's NodeStrategy.getTypeKey() exactly (see NodeStrategyRegistry.java).
-// They previously did not for several nodes (cron, email_trigger, http,
-// github_action, sheets, email_send, if) — those old names still work for
-// already-saved workflows via NodeStrategyRegistry's LEGACY_TYPE_ALIASES, but
-// every *new* node created from this palette now uses the real backend key
-// directly so no translation layer is needed at runtime.
+// All node types available in the palette. Canonical keys must match NodeStrategy.getTypeKey().
 
 export const PROVIDER_MODELS = {
   gemini: ['gemini-3.6-flash'],
@@ -24,72 +16,50 @@ export const PROVIDER_MODELS = {
 export const AI_PROVIDERS = ['gemini', 'openai', 'openrouter', 'auto']
 
 export const nodeCategories = [
-  {
-    id: 'triggers', label: 'Triggers', color: '#f97316',
-    nodes: [
-      { type: 'cron_trigger', label: 'Cron Trigger', icon: 'Clock', description: 'Schedule on a timer', color: '#f97316' },
-      { type: 'webhook', label: 'Webhook', icon: 'Zap', description: 'HTTP POST trigger', color: '#f97316' },
-      { type: 'github_event', label: 'GitHub Event', icon: 'GitPullRequest', description: 'PR, push, issue events', color: '#f97316' },
-      { type: 'email_received', label: 'Email Received', icon: 'Mail', description: 'Trigger on new Gmail messages', color: '#f97316' },
-    ],
-  },
-  {
-    id: 'ai', label: 'AI Nodes', color: '#7c3aed',
-    nodes: [
-      { type: 'ai', label: 'AI Completion', icon: 'Brain', description: 'Run a prompt through OpenAI, Gemini, or any connected provider', color: '#7c3aed' },
-      { type: 'ai_router', label: 'AI Router', icon: 'Network', description: 'AI-based conditional routing', color: '#7c3aed' },
-      { type: 'summarizer', label: 'Summarizer', icon: 'FileText', description: 'Summarize long text', color: '#7c3aed' },
-      { type: 'classifier', label: 'Classifier', icon: 'Tag', description: 'Classify input into categories', color: '#7c3aed' },
-    ],
-  },
-  {
-    id: 'logic', label: 'Logic', color: '#3b82f6',
-    nodes: [
-      { type: 'if_condition', label: 'IF Condition', icon: 'GitBranch', description: 'Branch on condition', color: '#3b82f6' },
-      { type: 'switch', label: 'Switch', icon: 'GitBranch', description: 'Route to one of several branches by matching a field value', color: '#3b82f6' },
-      { type: 'loop', label: 'Loop', icon: 'RefreshCw', description: 'Iterate over a list', color: '#3b82f6' },
-      { type: 'merge', label: 'Merge', icon: 'Merge', description: 'Merge parallel branches', color: '#3b82f6' },
-      { type: 'delay', label: 'Delay', icon: 'Timer', description: 'Wait before continuing', color: '#3b82f6' },
-      { type: 'transform', label: 'Transform', icon: 'Code2', description: 'Reshape data with a field mapping (no code)', color: '#3b82f6' },
-    ],
-  },
-  {
-    id: 'integrations', label: 'Integrations', color: '#06b6d4',
-    nodes: [
-      { type: 'http_request', label: 'HTTP Request', icon: 'Globe', description: 'Call any external API', color: '#06b6d4' },
-      { type: 'github', label: 'GitHub', icon: 'GitPullRequest', description: 'Create PRs, issues, comments', color: '#06b6d4' },
-      { type: 'slack', label: 'Slack', icon: 'MessageSquare', description: 'Send Slack messages', color: '#06b6d4' },
-      { type: 'gmail', label: 'Gmail', icon: 'Mail', description: 'Send, read, and search emails', color: '#06b6d4' },
-      { type: 'notion', label: 'Notion', icon: 'BookOpen', description: 'Create/update Notion pages', color: '#06b6d4' },
-    ],
-  },
-  {
-    id: 'storage', label: 'Storage', color: '#10b981',
-    nodes: [
-      { type: 'google_sheets', label: 'Google Sheets', icon: 'Table', description: 'Append, read, and find spreadsheet rows', color: '#10b981' },
-      { type: 'database', label: 'Database', icon: 'Database', description: 'Query SQL/NoSQL databases', color: '#10b981' },
-      { type: 'file', label: 'File', icon: 'File', description: 'Read/write files', color: '#10b981' },
-      { type: 'redis', label: 'Redis', icon: 'Server', description: 'Cache key-value data', color: '#10b981' },
-    ],
-  },
-  {
-    id: 'communication', label: 'Communication', color: '#eab308',
-    nodes: [
-      { type: 'send_email', label: 'Send Email', icon: 'Send', description: 'Send transactional emails', color: '#eab308' },
-      { type: 'sms', label: 'SMS', icon: 'MessageCircle', description: 'Send SMS via Twilio', color: '#eab308' },
-      { type: 'discord', label: 'Discord', icon: 'Hash', description: 'Post Discord messages', color: '#eab308' },
-    ],
-  },
+  { id: 'triggers', label: 'Triggers', color: '#f97316', nodes: [
+    { type: 'cron_trigger', label: 'Cron Trigger', icon: 'Clock', description: 'Schedule on a timer', color: '#f97316' },
+    { type: 'webhook', label: 'Webhook', icon: 'Zap', description: 'HTTP POST trigger', color: '#f97316' },
+    { type: 'github_event', label: 'GitHub Event', icon: 'GitPullRequest', description: 'PR, push, issue events', color: '#f97316' },
+    { type: 'email_received', label: 'Email Received', icon: 'Mail', description: 'Trigger on new Gmail messages', color: '#f97316' },
+  ] },
+  { id: 'ai', label: 'AI Nodes', color: '#7c3aed', nodes: [
+    { type: 'ai', label: 'AI Completion', icon: 'Brain', description: 'Run a prompt through connected AI providers', color: '#7c3aed' },
+    { type: 'ai_router', label: 'AI Router', icon: 'Network', description: 'AI-based conditional routing', color: '#7c3aed' },
+    { type: 'summarizer', label: 'Summarizer', icon: 'FileText', description: 'Summarize long text', color: '#7c3aed' },
+    { type: 'classifier', label: 'Classifier', icon: 'Tag', description: 'Classify input into categories', color: '#7c3aed' },
+  ] },
+  { id: 'logic', label: 'Logic', color: '#3b82f6', nodes: [
+    { type: 'if_condition', label: 'IF Condition', icon: 'GitBranch', description: 'Typed and compound deterministic condition', color: '#3b82f6' },
+    { type: 'switch', label: 'Switch', icon: 'GitBranch', description: 'Route to one of several branches', color: '#3b82f6' },
+    { type: 'loop', label: 'Loop', icon: 'RefreshCw', description: 'Iterate over a list with isolated body execution', color: '#3b82f6' },
+    { type: 'merge', label: 'Merge', icon: 'Merge', description: 'Merge parallel branches', color: '#3b82f6' },
+    { type: 'delay', label: 'Delay', icon: 'Timer', description: 'Wait before continuing', color: '#3b82f6' },
+    { type: 'transform', label: 'Transform', icon: 'Code2', description: 'Reshape data with declarative field mapping', color: '#3b82f6' },
+  ] },
+  { id: 'integrations', label: 'Integrations', color: '#06b6d4', nodes: [
+    { type: 'http_request', label: 'HTTP Request', icon: 'Globe', description: 'Call any external API', color: '#06b6d4' },
+    { type: 'github', label: 'GitHub', icon: 'GitPullRequest', description: 'Create PRs, issues, comments', color: '#06b6d4' },
+    { type: 'slack', label: 'Slack', icon: 'MessageSquare', description: 'Send Slack messages', color: '#06b6d4' },
+    { type: 'gmail', label: 'Gmail', icon: 'Mail', description: 'Send, read, and search emails', color: '#06b6d4' },
+    { type: 'notion', label: 'Notion', icon: 'BookOpen', description: 'Create/update Notion pages', color: '#06b6d4' },
+  ] },
+  { id: 'storage', label: 'Storage', color: '#10b981', nodes: [
+    { type: 'google_sheets', label: 'Google Sheets', icon: 'Table', description: 'Append, read, and find spreadsheet rows', color: '#10b981' },
+    { type: 'database', label: 'Database', icon: 'Database', description: 'Query SQL/NoSQL databases', color: '#10b981' },
+    { type: 'file', label: 'File', icon: 'File', description: 'Read/write files', color: '#10b981' },
+    { type: 'redis', label: 'Redis', icon: 'Server', description: 'Cache key-value data', color: '#10b981' },
+  ] },
+  { id: 'communication', label: 'Communication', color: '#eab308', nodes: [
+    { type: 'send_email', label: 'Send Email', icon: 'Send', description: 'Send transactional emails', color: '#eab308' },
+    { type: 'sms', label: 'SMS', icon: 'MessageCircle', description: 'Send SMS via Twilio', color: '#eab308' },
+    { type: 'discord', label: 'Discord', icon: 'Hash', description: 'Post Discord messages', color: '#eab308' },
+  ] },
 ]
 
-export const TRIGGER_NODE_TYPES = new Set(
-  nodeCategories.find(c => c.id === 'triggers')?.nodes.map(n => n.type) ?? []
-)
+export const TRIGGER_NODE_TYPES = new Set(nodeCategories.find(c => c.id === 'triggers')?.nodes.map(n => n.type) ?? [])
 
 export const nodeConfigs = {
-  webhook: { fields: [
-    { key: 'method', label: 'HTTP Method', type: 'select', options: ['POST', 'GET', 'PUT'] },
-  ] },
+  webhook: { fields: [{ key: 'method', label: 'HTTP Method', type: 'select', options: ['POST', 'GET', 'PUT'] }] },
   cron_trigger: { fields: [
     { key: 'expression', label: 'Cron Expression', type: 'text', placeholder: '0 9 * * 1-5' },
     { key: 'timezone', label: 'Timezone', type: 'select', options: ['UTC', 'Asia/Kolkata', 'America/New_York', 'Europe/London'] },
@@ -111,24 +81,35 @@ export const nodeConfigs = {
     { key: 'body', label: 'Request Body', type: 'textarea', placeholder: '{"key": "value"}' },
   ] },
   ai: { fields: [
-    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini', description: 'Which connected AI provider runs this node' },
-    { key: 'model', label: 'Model', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash', description: 'Options depend on the AI Provider selected above' },
+    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini' },
+    { key: 'model', label: 'Model', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash' },
     { key: 'system', label: 'System Message', type: 'textarea', placeholder: 'You are a helpful assistant...' },
     { key: 'prompt', label: 'Prompt', type: 'textarea', placeholder: 'Analyze the following: {{input}}' },
-    { key: 'structuredOutput', label: 'Require JSON output', type: 'checkbox', default: false, description: 'Request provider-supported structured output for downstream workflow data.' },
+    { key: 'structuredOutput', label: 'Require JSON output', type: 'checkbox', default: false },
     { key: 'temperature', label: 'Temperature', type: 'range', min: 0, max: 1, step: 0.1, default: 0.7 },
     { key: 'max_tokens', label: 'Max Tokens', type: 'number', placeholder: '1000' },
     { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
   ] },
   if_condition: { fields: [
-    { key: 'field', label: 'Field (path in payload)', type: 'text', placeholder: 'status' },
-    { key: 'operator', label: 'Operator', type: 'select', options: ['equals', 'not_equals', 'contains', 'greater_than', 'less_than'] },
-    { key: 'value', label: 'Expected Value', type: 'text', placeholder: 'success' },
+    { key: 'field', label: 'Field (nested path)', type: 'text', placeholder: 'user.profile.status' },
+    { key: 'operator', label: 'Operator', type: 'select', options: [
+      'equals', 'not_equals', 'contains', 'not_contains', 'starts_with', 'ends_with',
+      'greater_than', 'greater_than_or_equal', 'less_than', 'less_than_or_equal',
+      'is_empty', 'is_not_empty', 'exists', 'not_exists', 'is_true', 'is_false'
+    ] },
+    { key: 'value', label: 'Expected Value', type: 'text', placeholder: 'success / 100 / true' },
+    { key: 'condition', label: 'Compound Condition (JSON)', type: 'textarea', rows: 7,
+      placeholder: '{"logic":"AND","conditions":[{"field":"status","operator":"equals","value":"paid"},{"field":"amount","operator":"greater_than","value":1000}]}' },
   ] },
   switch: { fields: [
-    { key: 'field', label: 'Field to Match', type: 'text', placeholder: 'match', description: 'Field in the input payload to compare against each case below' },
-    { key: 'cases', label: 'Cases', type: 'case-list', default: ['Case 1', 'Case 2'], description: 'Each case becomes an output on this node — connect it to whatever should run for that value' },
-    { key: 'defaultCase', label: 'Default Case', type: 'select', optionsFrom: 'cases', description: 'Used when the field value does not match any case above' },
+    { key: 'field', label: 'Field to Match', type: 'text', placeholder: 'match', description: 'Nested paths such as user.profile.role are supported.' },
+    { key: 'cases', label: 'Cases', type: 'case-list', default: ['Case 1', 'Case 2'] },
+    { key: 'defaultCase', label: 'Default Case', type: 'select', optionsFrom: 'cases' },
+  ] },
+  loop: { fields: [
+    { key: 'arrayField', label: 'Array Path', type: 'text', placeholder: 'messages' },
+    { key: 'bodyStartNodeId', label: 'Loop Body Start Node ID', type: 'text', placeholder: 'node-id', description: 'First node executed for every item.' },
+    { key: 'continuationNodeId', label: 'Continuation Node ID', type: 'text', placeholder: 'node-id', description: 'Node executed once after all iterations finish.' },
   ] },
   slack: { fields: [
     { key: 'channel', label: 'Channel', type: 'text', placeholder: '#general' },
@@ -144,8 +125,8 @@ export const nodeConfigs = {
     { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
   ] },
   summarizer: { fields: [
-    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini', description: 'Which connected AI provider runs this node' },
-    { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash', description: 'Options depend on the AI Provider selected above' },
+    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini' },
+    { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash' },
     { key: 'maxLength', label: 'Max Length (Chars)', type: 'number', placeholder: '200' },
     { key: 'inputText', label: 'Direct Input Text (Optional)', type: 'textarea', placeholder: 'Enter text to summarize directly here...' },
     { key: 'textField', label: 'Payload Field to Summarize', type: 'text', placeholder: 'text' },
@@ -153,15 +134,15 @@ export const nodeConfigs = {
     { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
   ] },
   classifier: { fields: [
-    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini', description: 'Which connected AI provider runs this node' },
-    { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash', description: 'Options depend on the AI Provider selected above' },
-    { key: 'labels', label: 'Labels', type: 'tags', placeholder: 'Personal, Official, Spam', description: 'Comma-separated controlled labels' },
+    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini' },
+    { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash' },
+    { key: 'labels', label: 'Labels', type: 'tags', placeholder: 'Personal, Official, Spam' },
     { key: 'textField', label: 'Payload Field to Classify', type: 'text', placeholder: 'body' },
     { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
   ] },
   ai_router: { fields: [
-    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini', description: 'Which connected AI provider runs this node' },
-    { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash', description: 'Options depend on the AI Provider selected above' },
+    { key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini' },
+    { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash' },
     { key: 'branches', label: 'Branches', type: 'tags', placeholder: 'urgent, normal' },
     { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
   ] },
@@ -185,7 +166,7 @@ export const nodeConfigs = {
     { key: 'spreadsheetId', label: 'Spreadsheet ID', type: 'text', placeholder: 'Spreadsheet ID' },
     { key: 'range', label: 'Sheet / A1 Range', type: 'text', placeholder: 'Sheet1!A1:D100' },
     { key: 'values', label: 'Append Values (JSON)', type: 'textarea', placeholder: '["{{sender}}", "{{subject}}", "{{label}}"]' },
-    { key: 'findColumn', label: 'Find Column', type: 'text', placeholder: 'A or 0', description: 'Column letter or zero-based column index for find.' },
+    { key: 'findColumn', label: 'Find Column', type: 'text', placeholder: 'A or 0' },
     { key: 'findValue', label: 'Find Value', type: 'text', placeholder: 'candidate@example.com' },
     { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false },
   ] },
@@ -210,5 +191,8 @@ export const nodeConfigs = {
   ] },
   transform: { fields: [
     { key: 'mappings', label: 'Field Mappings', type: 'mapping-editor', description: 'Map fields from the input payload to a new output shape.' },
+    { key: 'conversions', label: 'Type Conversions (JSON)', type: 'textarea', rows: 4, placeholder: '{"amount":"number","active":"boolean"}' },
+    { key: 'filter', label: 'Array Filter (JSON)', type: 'textarea', rows: 5, placeholder: '{"arrayPath":"items","condition":{"field":"status","operator":"equals","value":"active"}}' },
+    { key: 'map', label: 'Array Map (JSON)', type: 'textarea', rows: 5, placeholder: '{"arrayPath":"items","fields":{"name":"user.name","price":"price"}}' },
   ] },
 }
