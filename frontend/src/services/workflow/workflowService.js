@@ -36,8 +36,8 @@ export const workflowService = {
     return apiClient.patch(`/api/workflows/${id}/toggle`)
   },
 
-  async trigger(id) {
-    return apiClient.post(`/api/workflows/${id}/trigger`)
+  async trigger(id, input) {
+    return apiClient.post(`/api/workflows/${id}/trigger`, input === undefined ? undefined : input)
   },
 
   // NODE DEFINITIONS
