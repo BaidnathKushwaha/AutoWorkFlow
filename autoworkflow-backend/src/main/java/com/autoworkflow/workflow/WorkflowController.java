@@ -20,6 +20,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WorkflowController {
 
+    private static final String DEFAULT_MANUAL_INPUT_TEXT = "Sample text from trigger node for testing workflow execution.";
+    private static final String DEFAULT_MANUAL_INPUT_TITLE = "Sample Test Input Title";
+
     private final WorkflowService workflowService;
     private final ExecutionService executionService;
     private final CurrentUserProvider currentUserProvider;
@@ -72,17 +75,29 @@ public class WorkflowController {
         return ApiResponse.success(null, "Workflow deleted");
     }
 
-    /** Manual "Run" trigger from the Workflows list / Workflow Builder toolbar. */
+    /** Manual "Run" trigger. An omitted body keeps the legacy sample input. */
     @PostMapping("/{id}/trigger")
-    public ApiResponse<TriggerRunResponse> trigger(@PathVariable UUID id) {
+    public ApiResponse<TriggerRunResponse> trigger(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.fasterxml.jackson.databind.JsonNode customInput) {
         UUID userId = currentUserProvider.getCurrentUserId();
         workflowService.getById(userId, id); // ownership check
-        com.fasterxml.jackson.databind.node.ObjectNode samplePayload = JsonUtils.mapper().createObjectNode();
-        samplePayload.put("text", "Sample text from trigger node for testing workflow execution.");
-        samplePayload.put("title", "Sample Test Input Title");
-        samplePayload.put("status", "success");
-        samplePayload.put("action", "test_run");
-        ExecutionResponse execution = executionService.execute(id, TriggeredBy.MANUAL, samplePayload);
+
+        com.fasterxml.jackson.databind.JsonNode input = customInput;
+        if (input == null || input.isNull()) {
+            input = defaultManualPayload();
+        }
+
+        ExecutionResponse execution = executionService.execute(id, TriggeredBy.MANUAL, input);
         return ApiResponse.success(new TriggerRunResponse(execution.id(), execution.status()));
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode defaultManualPayload() {
+        var payload = JsonUtils.mapper().createObjectNode();
+        payload.put("text", DEFAULT_MANUAL_INPUT_TEXT);
+        payload.put("title", DEFAULT_MANUAL_INPUT_TITLE);
+        payload.put("status", "success");
+        payload.put("action", "test_run");
+        return payload;
     }
 }
