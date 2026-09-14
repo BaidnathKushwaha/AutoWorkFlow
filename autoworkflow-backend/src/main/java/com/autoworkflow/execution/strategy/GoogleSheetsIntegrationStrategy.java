@@ -27,6 +27,8 @@ import java.util.regex.Pattern;
 public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
     private static final String BASE = "https://sheets.googleapis.com/v4/spreadsheets";
     private static final Pattern TEMPLATE = Pattern.compile("\\{\\{\\s*([^}]+?)\\s*}}" );
+    private static final Pattern CELL_RANGE = Pattern.compile("(?:(.+)!)?([A-Za-z]+)(\\d+)(?::([A-Za-z]+)(\\d+))?");
+    private static final Pattern COLUMN_RANGE = Pattern.compile("(?:(.+)!)?([A-Za-z]+):([A-Za-z]+)");
 
     private final WebClient.Builder webClientBuilder;
     private final IntegrationService integrationService;
@@ -52,11 +54,16 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
     }
 
     private NodeExecutionResult append(NodeExecutionContext ctx, String token, String spreadsheetId, String range) {
-        JsonNode values = parseConfiguredValues(ctx.getNodeConfig().path("values"));
+        JsonNode configured = parseConfiguredValues(ctx.getNodeConfig().path("values"));
         ArrayNode row = JsonUtils.mapper().createArrayNode();
-        if (values != null && values.isArray()) {
-            JsonNode source = values.size() == 1 && values.get(0).isArray() ? values.get(0) : values;
+        ObjectNode namedMapping = configured != null && configured.isObject() ? (ObjectNode) configured : null;
+
+        if (configured != null && configured.isArray()) {
+            JsonNode source = configured.size() == 1 && configured.get(0).isArray() ? configured.get(0) : configured;
             source.forEach(value -> row.add(resolveValue(value, ctx.getInputPayload())));
+        } else if (namedMapping != null) {
+            namedMapping.fields().forEachRemaining(entry -> row.add(resolveValue(entry.getValue(), ctx.getInputPayload())));
+            writeHeadersIfTargetIsEmpty(token, spreadsheetId, range, namedMapping);
         } else {
             row.add(ctx.getInputPayload() == null ? "" : ctx.getInputPayload().toString());
         }
@@ -78,6 +85,31 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
         output.put("updatedColumns", response.path("updates").path("updatedColumns").asInt(0));
         output.put("updatedCells", response.path("updates").path("updatedCells").asInt(0));
         return NodeExecutionResult.ok(output);
+    }
+
+    private void writeHeadersIfTargetIsEmpty(String token, String spreadsheetId, String range, ObjectNode mapping) {
+        String inspectionRange = sheetName(range);
+        JsonNode existing = apiExecutor.execute("google_sheets", "check sheet before headers", () -> webClientBuilder.build().get()
+                .uri(valuesUri(spreadsheetId, inspectionRange))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
+
+        JsonNode existingValues = existing.path("values");
+        if (existingValues.isArray() && !existingValues.isEmpty()) return;
+
+        String headerRange = headerRange(range);
+        ArrayNode headerRow = JsonUtils.mapper().createArrayNode();
+        mapping.fieldNames().forEachRemaining(headerRow::add);
+
+        ObjectNode body = JsonUtils.mapper().createObjectNode();
+        body.putArray("values").add(headerRow);
+        apiExecutor.execute("google_sheets", "create Google Sheets headers", () -> webClientBuilder.build().put()
+                .uri(updateValuesUri(spreadsheetId, headerRange))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .bodyValue(body)
+                .retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
     }
 
     private NodeExecutionResult read(String token, String spreadsheetId, String range) {
@@ -128,11 +160,13 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
 
     private JsonNode parseConfiguredValues(JsonNode configured) {
         if (configured == null || configured.isMissingNode() || configured.isNull()) return null;
-        if (configured.isArray()) return configured;
+        if (configured.isArray() || configured.isObject()) return configured;
         if (!configured.isTextual() || configured.asText().isBlank()) return null;
         try {
             JsonNode parsed = JsonUtils.mapper().readTree(configured.asText());
-            if (!parsed.isArray()) throw new IllegalArgumentException("Google Sheets append values must be a JSON array.");
+            if (!parsed.isArray() && !parsed.isObject()) {
+                throw new IllegalArgumentException("Google Sheets append values must be a JSON array or named object mapping.");
+            }
             return parsed;
         } catch (IllegalArgumentException e) {
             throw e;
@@ -183,6 +217,16 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
                 + UriUtils.encodePathSegment(range, StandardCharsets.UTF_8));
     }
 
+    private URI updateValuesUri(String spreadsheetId, String range) {
+        return UriComponentsBuilder.fromUriString(BASE + "/"
+                        + UriUtils.encodePathSegment(spreadsheetId, StandardCharsets.UTF_8)
+                        + "/values/"
+                        + UriUtils.encodePathSegment(range, StandardCharsets.UTF_8))
+                .queryParam("valueInputOption", "USER_ENTERED")
+                .build()
+                .toUri();
+    }
+
     private URI appendUri(String spreadsheetId, String range) {
         String path = BASE + "/"
                 + UriUtils.encodePathSegment(spreadsheetId, StandardCharsets.UTF_8)
@@ -194,6 +238,32 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
                 .queryParam("insertDataOption", "INSERT_ROWS")
                 .build()
                 .toUri();
+    }
+
+    private String sheetName(String range) {
+        int separator = range.lastIndexOf('!');
+        return separator > 0 ? range.substring(0, separator) : range;
+    }
+
+    private String headerRange(String range) {
+        int separator = range.lastIndexOf('!');
+        String sheet = separator > 0 ? range.substring(0, separator) : "";
+        String a1 = separator > 0 ? range.substring(separator + 1) : range;
+        Matcher cellMatcher = CELL_RANGE.matcher(a1);
+        if (cellMatcher.matches()) {
+            String startColumn = cellMatcher.group(2);
+            String startRow = cellMatcher.group(3);
+            String endColumn = cellMatcher.group(4);
+            String headerA1 = startColumn + startRow;
+            if (endColumn != null) headerA1 += ":" + endColumn + startRow;
+            return sheet.isEmpty() ? headerA1 : sheet + "!" + headerA1;
+        }
+        Matcher columnMatcher = COLUMN_RANGE.matcher(a1);
+        if (columnMatcher.matches()) {
+            String headerA1 = columnMatcher.group(2) + "1:" + columnMatcher.group(3) + "1";
+            return sheet.isEmpty() ? headerA1 : sheet + "!" + headerA1;
+        }
+        return range;
     }
 
     private int columnToIndex(String column) {
