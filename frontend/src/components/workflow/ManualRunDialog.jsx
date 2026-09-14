@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { X, Play } from 'lucide-react'
 
 const DEFAULT_INPUT = JSON.stringify({
@@ -11,13 +11,6 @@ const DEFAULT_INPUT = JSON.stringify({
 export default function ManualRunDialog({ open, onClose, onRun }) {
     const [value, setValue] = useState(DEFAULT_INPUT)
     const [error, setError] = useState('')
-
-    useEffect(() => {
-        if (open) {
-            setValue(DEFAULT_INPUT)
-            setError('')
-        }
-    }, [open])
 
     if (!open) return null
 
@@ -35,13 +28,19 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
         }
     }
 
+    const handleClose = () => {
+        setValue(DEFAULT_INPUT)
+        setError('')
+        onClose()
+    }
+
     return (
         <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="manual-run-title"
             onMouseDown={(event) => {
-                if (event.target === event.currentTarget) onClose()
+                if (event.target === event.currentTarget) handleClose()
             }}
             style={{
                 position: 'fixed', inset: 0, zIndex: 100,
@@ -64,7 +63,7 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
                             Provide the JSON payload that should enter the workflow.
                         </p>
                     </div>
-                    <button type="button" onClick={onClose} aria-label="Close" className="btn-ghost" style={{ padding: '5px' }}>
+                    <button type="button" onClick={handleClose} aria-label="Close" className="btn-ghost" style={{ padding: '5px' }}>
                         <X size={16} />
                     </button>
                 </div>
@@ -96,7 +95,7 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
                     display: 'flex', justifyContent: 'flex-end', gap: '8px',
                     padding: '14px 20px', borderTop: '1px solid var(--border)',
                 }}>
-                    <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+                    <button type="button" onClick={handleClose} className="btn-ghost">Cancel</button>
                     <button type="button" onClick={handleRun} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Play size={14} /> Run workflow
                     </button>
