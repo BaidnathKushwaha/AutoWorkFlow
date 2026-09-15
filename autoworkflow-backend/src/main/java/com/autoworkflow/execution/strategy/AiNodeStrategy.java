@@ -34,6 +34,7 @@ public class AiNodeStrategy implements NodeStrategy {
         JsonNode payload = ctx.getInputPayload();
         String inputText = PayloadTextResolver.resolveTextOrRaw(config, payload);
         String promptTemplate = config.path("prompt").asText("Summarize and explain the following:\n\n{{input}}");
+        validateRequiredResumeMatcherInput(promptTemplate, payload);
         String prompt = substituteTemplate(promptTemplate, payload, inputText);
         String provider = config.path("provider").asText("default");
         String userApiKey = resolveUserKey(ctx, provider);
@@ -67,6 +68,27 @@ public class AiNodeStrategy implements NodeStrategy {
         return NodeExecutionResult.ok(output);
     }
 
+    private void validateRequiredResumeMatcherInput(String promptTemplate, JsonNode payload) {
+        String template = promptTemplate == null ? "" : promptTemplate;
+        boolean requiresResumeFields = template.contains("{{body}}") && template.contains("{{jobDescription}}");
+        if (!requiresResumeFields) return;
+
+        JsonNode body = resolvePath("body", payload);
+        JsonNode jobDescription = resolvePath("jobDescription", payload);
+        if (isBlankValue(body) || isBlankValue(jobDescription)) {
+            throw new IllegalArgumentException("Resume Matcher requires resume body and job description.");
+        }
+    }
+
+    private boolean isBlankValue(JsonNode value) {
+        return value == null || value.isMissingNode() || value.isNull() || (value.isTextual() && value.asText().isBlank());
+    }
+
+    private JsonNode resolvePath(String key, JsonNode payload) {
+        if (payload == null) return null;
+        return payload.at(key.startsWith("/") ? key : "/" + key.replace('.', '/'));
+    }
+
     private String substituteTemplate(String template, JsonNode payload, String inputText) {
         Matcher matcher = TEMPLATE.matcher(template == null ? "" : template);
         StringBuffer out = new StringBuffer();
@@ -75,7 +97,7 @@ public class AiNodeStrategy implements NodeStrategy {
             String replacement;
             if ("input".equals(key)) replacement = inputText;
             else {
-                JsonNode value = payload == null ? null : payload.at(key.startsWith("/") ? key : "/" + key.replace('.', '/'));
+                JsonNode value = resolvePath(key, payload);
                 replacement = value == null || value.isMissingNode() ? "" : (value.isTextual() ? value.asText() : value.toString());
             }
             matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
