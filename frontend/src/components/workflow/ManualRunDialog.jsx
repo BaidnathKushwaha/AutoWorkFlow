@@ -2,10 +2,8 @@ import { useState } from 'react'
 import { X, Play } from 'lucide-react'
 
 const DEFAULT_INPUT = JSON.stringify({
-    text: 'Sample text from trigger node for testing workflow execution.',
-    title: 'Sample Test Input Title',
-    status: 'success',
-    action: 'test_run',
+    body: 'John Doe\nJava developer with 2 years of experience in Spring Boot, Java, REST APIs and PostgreSQL.',
+    jobDescription: 'We are looking for a Java backend developer with Spring Boot, REST API and PostgreSQL experience.',
 }, null, 2)
 
 export default function ManualRunDialog({ open, onClose, onRun }) {
@@ -87,7 +85,7 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
                     />
                     {error && <div style={{ marginTop: '7px', color: 'var(--accent-rose)', fontSize: '11px' }}>{error}</div>}
                     <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '11px' }}>
-                        Example: {'{ "text": "hello" }'}
+                        Resume Matcher example payload is pre-filled. Replace it with any JSON object needed by your workflow.
                     </div>
                 </div>
 
