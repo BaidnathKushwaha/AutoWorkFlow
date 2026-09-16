@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { X, Play } from 'lucide-react'
 
 const DEFAULT_INPUT = JSON.stringify({
-    body: 'John Doe\nJava developer with 2 years of experience in Spring Boot, Java, REST APIs and PostgreSQL.',
-    jobDescription: 'We are looking for a Java backend developer with Spring Boot, REST API and PostgreSQL experience.',
+    body: 'John Doe\nJava developer with 2 years of experience in Java, Spring Boot, REST APIs and PostgreSQL.',
+    jobDescription: 'We are looking for a Java backend developer with Java, Spring Boot, REST API and PostgreSQL experience.',
 }, null, 2)
 
 export default function ManualRunDialog({ open, onClose, onRun }) {
@@ -85,7 +85,7 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
                     />
                     {error && <div style={{ marginTop: '7px', color: 'var(--accent-rose)', fontSize: '11px' }}>{error}</div>}
                     <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '11px' }}>
-                        Resume Matcher example payload is pre-filled. Replace it with any JSON object needed by your workflow.
+                        This is a development/testing input. Production Resume Matcher workflows receive resume text from Gmail attachments.
                     </div>
                 </div>
 
