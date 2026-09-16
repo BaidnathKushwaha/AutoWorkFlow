@@ -1,10 +1,7 @@
 import { useState } from 'react'
 import { X, Play } from 'lucide-react'
 
-const DEFAULT_INPUT = JSON.stringify({
-    body: 'John Doe\nJava developer with 2 years of experience in Java, Spring Boot, REST APIs and PostgreSQL.',
-    jobDescription: 'We are looking for a Java backend developer with Java, Spring Boot, REST API and PostgreSQL experience.',
-}, null, 2)
+const DEFAULT_INPUT = JSON.stringify({}, null, 2)
 
 export default function ManualRunDialog({ open, onClose, onRun }) {
     const [value, setValue] = useState(DEFAULT_INPUT)
@@ -76,6 +73,7 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
                         onChange={(event) => { setValue(event.target.value); setError('') }}
                         spellCheck="false"
                         rows={13}
+                        placeholder={'{\n  "body": "...",\n  "jobDescription": "..."\n}'}
                         style={{
                             width: '100%', boxSizing: 'border-box', resize: 'vertical',
                             background: 'var(--bg-input)', border: `1px solid ${error ? 'var(--accent-rose)' : 'var(--border)'}`,
@@ -85,7 +83,7 @@ export default function ManualRunDialog({ open, onClose, onRun }) {
                     />
                     {error && <div style={{ marginTop: '7px', color: 'var(--accent-rose)', fontSize: '11px' }}>{error}</div>}
                     <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '11px' }}>
-                        This is a development/testing input. Production Resume Matcher workflows receive resume text from Gmail attachments.
+                        Manual Run does not create or simulate a Gmail resume. For the production Resume Matcher flow, deploy the workflow and send a new Gmail with the resume attachment. The Email Received trigger supplies the configured job description to the Resume Matcher.
                     </div>
                 </div>
 
