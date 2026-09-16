@@ -53,7 +53,7 @@ public class GmailPollingScheduler {
             JsonNode trigger = findEmailTrigger(workflow.getCanvasNodes());
             if (trigger == null) continue;
             try { pollWorkflow(workflow, trigger.path("data")); }
-            catch (Exception e) { log.warn("Gmail trigger poll failed for workflow {}: {}", workflow.getId(), e.getMessage()); }
+            catch (Exception e) { log.warn("Gmail trigger poll failed for workflow {}: {}", workflow.getId(), safeMessage(e)); }
         }
     }
 
@@ -81,6 +81,7 @@ public class GmailPollingScheduler {
 
         String nextHistoryId = historyResponse.path("historyId").asText(historyCursor);
         for (String messageId : messageIds) {
+            if (messageId.isBlank()) throw new IllegalArgumentException("No message ID available.");
             ObjectNode normalized = normalize(fetchMessage(token, messageId));
             boolean application = matchesFilters(normalized, config) && isApplicationEmail(normalized);
             normalized.put("isApplication", application);
@@ -104,6 +105,7 @@ public class GmailPollingScheduler {
     }
 
     private JsonNode fetchMessage(String token, String id) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("No message ID available.");
         return apiExecutor.execute("gmail", "get trigger message", () -> webClientBuilder.build().get()
                 .uri(BASE + "/messages/" + id + "?format=full")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
@@ -111,48 +113,72 @@ public class GmailPollingScheduler {
     }
 
     private void enrichResumeAttachment(String token, String messageId, ObjectNode normalized) {
-        JsonNode attachments = normalized.path("attachments");
-        String bestFilename = "";
-        String bestMime = "";
-        String bestAttachmentId = "";
-        int bestScore = -1;
+        JsonNode selected = selectResumeAttachment(normalized.path("attachments"));
+        if (selected == null) throw new IllegalArgumentException("No supported resume attachment found in Gmail message.");
 
-        for (JsonNode attachment : attachments) {
-            String filename = attachment.path("filename").asText("");
-            String extension = extension(filename);
-            if (!RESUME_EXTENSIONS.contains(extension)) continue;
-            String lower = filename.toLowerCase(Locale.ROOT);
-            int score = 10;
-            for (String term : RESUME_NAME_TERMS) if (lower.contains(term)) score += 10;
-            if (score > bestScore) {
-                bestScore = score;
-                bestFilename = filename;
-                bestMime = attachment.path("mimeType").asText("");
-                bestAttachmentId = attachment.path("attachmentId").asText("");
-            }
+        String filename = selected.path("filename").asText("");
+        String mimeType = selected.path("mimeType").asText("");
+        String attachmentId = selected.path("attachmentId").asText("");
+        if (filename.isBlank()) throw new IllegalArgumentException("No supported resume attachment found in Gmail message.");
+
+        final String attachmentName = filename;
+        final String attachmentMime = mimeType;
+        final byte[] bytes;
+        if (!attachmentId.isBlank()) {
+            bytes = downloadAttachment(token, messageId, attachmentId, attachmentName);
+        } else {
+            throw new IllegalArgumentException("Gmail attachment download failed: no attachment ID for " + attachmentName + ".");
         }
 
-        if (bestAttachmentId.isBlank()) return;
+        if (bytes.length == 0) throw new IllegalArgumentException("Resume attachment is empty: " + attachmentName);
 
-        final String attachmentId = bestAttachmentId;
-        final String filename = bestFilename;
-        final String mimeType = bestMime;
+        try {
+            String text = attachmentTextExtractor.extract(attachmentName, attachmentMime, bytes);
+            if (text == null || text.isBlank()) {
+                throw new IllegalArgumentException("Resume text extraction failed: no readable text found in " + attachmentName);
+            }
+            normalized.put("body", text);
+            normalized.put("attachmentName", attachmentName);
+            normalized.put("attachmentType", attachmentMime);
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Resume text extraction failed for " + attachmentName + ".", e);
+        }
+    }
+
+    private byte[] downloadAttachment(String token, String messageId, String attachmentId, String filename) {
         try {
             JsonNode response = apiExecutor.execute("gmail", "get resume attachment", () -> webClientBuilder.build().get()
                     .uri(BASE + "/messages/" + messageId + "/attachments/" + attachmentId)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
                     .timeout(Duration.ofSeconds(30)).block());
-            byte[] bytes = decodeBytes(response.path("data").asText(""));
-            if (bytes.length == 0) throw new IllegalArgumentException("Resume attachment contains no data.");
-            String text = attachmentTextExtractor.extract(filename, mimeType, bytes);
-            normalized.put("body", text);
-            normalized.put("attachmentName", filename);
-            normalized.put("attachmentType", mimeType);
+            String data = response.path("data").asText("");
+            if (data.isBlank()) throw new IllegalArgumentException("Gmail attachment download failed: empty attachment data.");
+            return decodeBytes(data);
+        } catch (IllegalArgumentException e) {
+            throw e;
         } catch (Exception e) {
-            normalized.put("resumeExtractionError", e.getMessage() == null ? "Unable to extract resume attachment." : e.getMessage());
-            normalized.put("body", "");
-            log.debug("Unable to extract Gmail resume attachment {}: {}", filename, e.getMessage());
+            throw new IllegalArgumentException("Gmail attachment download failed for " + filename + ".", e);
         }
+    }
+
+    JsonNode selectResumeAttachment(JsonNode attachments) {
+        if (attachments == null || !attachments.isArray()) return null;
+        JsonNode best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (JsonNode attachment : attachments) {
+            String filename = attachment.path("filename").asText("");
+            if (!RESUME_EXTENSIONS.contains(extension(filename))) continue;
+            String lower = filename.toLowerCase(Locale.ROOT);
+            int score = 0;
+            for (String term : RESUME_NAME_TERMS) if (lower.contains(term)) score += 100;
+            if (best == null || score > bestScore) {
+                best = attachment;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     private boolean isApplicationEmail(JsonNode message) {
@@ -165,21 +191,16 @@ public class GmailPollingScheduler {
         }
         boolean hasResumeAttachment = false;
         JsonNode attachments = message.path("attachments");
-        if (attachments.isArray()) {
-            for (JsonNode attachment : attachments) {
-                if (isResumeAttachment(attachment)) { hasResumeAttachment = true; break; }
-            }
-        }
+        if (attachments.isArray()) hasResumeAttachment = selectResumeAttachment(attachments) != null;
         return textSignals >= 2 || (textSignals >= 1 && hasResumeAttachment);
     }
 
-    private boolean isResumeAttachment(JsonNode attachment) {
-        return RESUME_EXTENSIONS.contains(extension(attachment.path("filename").asText("")));
-    }
-
     private ObjectNode normalize(JsonNode message) {
+        if (message == null || !message.isObject()) throw new IllegalArgumentException("Gmail message payload is missing.");
+        String messageId = message.path("id").asText("");
+        if (messageId.isBlank()) throw new IllegalArgumentException("No message ID available.");
         ObjectNode output = JsonUtils.mapper().createObjectNode();
-        output.put("messageId", message.path("id").asText());
+        output.put("messageId", messageId);
         output.put("threadId", message.path("threadId").asText());
         output.put("timestamp", message.path("internalDate").asText());
         output.set("labels", message.path("labelIds").isArray() ? message.path("labelIds") : JsonUtils.mapper().createArrayNode());
@@ -246,12 +267,18 @@ public class GmailPollingScheduler {
 
     private byte[] decodeBytes(String data) {
         try { return Base64.getUrlDecoder().decode(data); }
-        catch (IllegalArgumentException e) { return new byte[0]; }
+        catch (IllegalArgumentException e) { throw new IllegalArgumentException("Gmail attachment data is invalid."); }
     }
 
     private String extension(String filename) {
         int dot = filename == null ? -1 : filename.lastIndexOf('.');
         return dot < 0 ? "" : filename.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private String safeMessage(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.isBlank()) return e.getClass().getSimpleName();
+        return message.replaceAll("(?i)Bearer\\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]");
     }
 
     private JsonNode findEmailTrigger(JsonNode nodes) {
