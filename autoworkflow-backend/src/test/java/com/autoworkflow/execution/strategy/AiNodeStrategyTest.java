@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -60,8 +61,6 @@ class AiNodeStrategyTest {
 
     @Test
     void unsetProvider_resolvesThroughAiServicesDefaultSentinel_notNullOrStaticConfig() throws Exception {
-        // No "provider" field at all — this must reach AiService as "default" so the
-        // user's account-level AI preference is consulted, not app.ai.default-provider.
         ObjectNode config = JsonUtils.mapper().createObjectNode();
         config.put("prompt", "Summarize: {{input}}");
 
@@ -96,9 +95,47 @@ class AiNodeStrategyTest {
         assertThat(captor.getValue().userApiKey()).isEqualTo("user-connected-openrouter-key");
     }
 
-    // --- Observability: successful output must surface provider/model, and must never
-    // leak the resolved credential into the node's output (which the execution console/
-    // ConfigPanel display as-is, and which persists into execution history). ---
+    @Test
+    void resumeMatcher_missingJobDescription_failsBeforeCallingAiService() throws Exception {
+        ObjectNode config = JsonUtils.mapper().createObjectNode();
+        config.put("provider", "openrouter");
+        config.put("model", "openrouter/free");
+        config.put("prompt", "Match the resume in {{body}} against this job description: {{jobDescription}}.");
+
+        JsonNode input = JsonUtils.mapper().readTree("""
+                {
+                  "body": "John Doe Java Spring Boot PostgreSQL"
+                }
+                """);
+
+        assertThatThrownBy(() -> strategy.execute(ctx(config, input)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Resume Matcher requires resume body and job description.");
+        verifyNoInteractions(aiService);
+    }
+
+    @Test
+    void resumeMatcher_withBodyAndJobDescription_sendsBothFieldsToAiService() throws Exception {
+        ObjectNode config = JsonUtils.mapper().createObjectNode();
+        config.put("provider", "openrouter");
+        config.put("model", "openrouter/free");
+        config.put("prompt", "Match the resume in {{body}} against this job description: {{jobDescription}}.");
+
+        JsonNode input = JsonUtils.mapper().readTree("""
+                {
+                  "body": "John Doe Java Spring Boot PostgreSQL",
+                  "jobDescription": "Java Backend Developer with Spring Boot and PostgreSQL"
+                }
+                """);
+
+        strategy.execute(ctx(config, input));
+
+        ArgumentCaptor<ChatRequest> captor = ArgumentCaptor.forClass(ChatRequest.class);
+        verify(aiService).chat(org.mockito.ArgumentMatchers.eq("openrouter"), captor.capture());
+        assertThat(captor.getValue().messages().get(0).content())
+                .contains("John Doe Java Spring Boot PostgreSQL")
+                .contains("Java Backend Developer with Spring Boot and PostgreSQL");
+    }
 
     @Test
     void successfulOutput_includesProviderAndModel() throws Exception {
