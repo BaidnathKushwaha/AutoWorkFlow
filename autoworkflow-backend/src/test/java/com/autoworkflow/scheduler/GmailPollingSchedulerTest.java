@@ -96,7 +96,7 @@ class GmailPollingSchedulerTest {
                   }
                 }
                 """.formatted(encodedEmailBody, resumePdf.length);
-        String attachmentJson = """{"size":%d,"data":"%s"}""".formatted(resumePdf.length, encodedResume);
+        String attachmentJson = "{\"size\":%d,\"data\":\"%s\"}".formatted(resumePdf.length, encodedResume);
 
         AtomicReference<String> attachmentRequest = new AtomicReference<>();
         ExchangeFunction exchange = request -> responseFor(request, historyJson, messageJson, attachmentJson, attachmentRequest);
