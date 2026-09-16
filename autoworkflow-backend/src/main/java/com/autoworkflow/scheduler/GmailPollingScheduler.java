@@ -98,7 +98,7 @@ public class GmailPollingScheduler {
     }
 
     private String currentHistoryId(String token) {
-        JsonNode profile = apiExecutor.execute("gmail", "read profile", () -> webClientBuilder.build().get().uri(BASE + "/profile")
+        JsonNode profile = apiExecutor.execute("gmail", "read profile", () -> webClientBuilder.build().get().uri(profileUri())
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(30)).block());
         String historyId = profile.path("historyId").asText();
@@ -165,7 +165,11 @@ public class GmailPollingScheduler {
         }
     }
 
-    private URI historyUri(String historyCursor) {
+    URI profileUri() {
+        return URI.create(BASE + "/profile");
+    }
+
+    URI historyUri(String historyCursor) {
         return UriComponentsBuilder.fromUriString(BASE + "/history")
                 .queryParam("startHistoryId", historyCursor)
                 .queryParam("historyTypes", "messageAdded")
@@ -173,15 +177,20 @@ public class GmailPollingScheduler {
                 .toUri();
     }
 
-    private URI messageUri(String messageId) {
-        return URI.create(BASE + "/messages/" + UriUtils.encodePathSegment(messageId, StandardCharsets.UTF_8) + "?format=full");
+    URI messageUri(String messageId) {
+        return UriComponentsBuilder.fromUriString(BASE + "/messages/" + UriUtils.encodePathSegment(messageId, StandardCharsets.UTF_8))
+                .queryParam("format", "full")
+                .build()
+                .toUri();
     }
 
-    private URI attachmentUri(String messageId, String attachmentId) {
-        return URI.create(BASE + "/messages/"
+    URI attachmentUri(String messageId, String attachmentId) {
+        return UriComponentsBuilder.fromUriString(BASE + "/messages/"
                 + UriUtils.encodePathSegment(messageId, StandardCharsets.UTF_8)
                 + "/attachments/"
-                + UriUtils.encodePathSegment(attachmentId, StandardCharsets.UTF_8));
+                + UriUtils.encodePathSegment(attachmentId, StandardCharsets.UTF_8))
+                .build()
+                .toUri();
     }
 
     JsonNode selectResumeAttachment(JsonNode attachments) {
