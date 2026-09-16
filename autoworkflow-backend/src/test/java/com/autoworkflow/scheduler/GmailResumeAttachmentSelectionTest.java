@@ -10,14 +10,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class GmailResumeAttachmentSelectionTest {
 
     @Test
-    void prefersResumeNamedDocumentAndIgnoresUnsupportedFiles() {
+    void prefersResumeNamedDocumentAndIgnoresUnsupportedFiles() throws Exception {
         GmailPollingScheduler scheduler = scheduler();
         JsonNode attachments = JsonUtils.mapper().readTree("""
                 [
