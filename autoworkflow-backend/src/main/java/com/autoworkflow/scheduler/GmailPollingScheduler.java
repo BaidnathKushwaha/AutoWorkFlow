@@ -21,20 +21,30 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
 import java.util.Base64;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class GmailPollingScheduler {
     private static final String BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
+    private static final Set<String> RESUME_EXTENSIONS = Set.of("pdf", "doc", "docx");
+    private static final Set<String> RESUME_NAME_TERMS = Set.of("resume", "cv", "curriculum", "candidate", "profile");
+    private static final Set<String> APPLICATION_TERMS = Set.of(
+            "application", "applying", "candidate", "resume", "cv", "internship", "job", "position",
+            "opportunity", "hiring", "recruitment", "recruiting", "apply", "interested in", "resume attached",
+            "cv attached", "role", "vacancy"
+    );
     private final WorkflowRepository workflowRepository;
     private final GmailTriggerStateRepository stateRepository;
     private final IntegrationService integrationService;
     private final IntegrationApiExecutor apiExecutor;
     private final ExecutionService executionService;
     private final WebClient.Builder webClientBuilder;
+    private final ResumeAttachmentTextExtractor attachmentTextExtractor;
 
     @Scheduled(fixedDelay = 30000)
     @Async("workflowExecutorPool")
@@ -72,8 +82,10 @@ public class GmailPollingScheduler {
         String nextHistoryId = historyResponse.path("historyId").asText(historyCursor);
         for (String messageId : messageIds) {
             ObjectNode normalized = normalize(fetchMessage(token, messageId));
-            enrichTextAttachments(token, messageId, normalized);
-            if (matchesFilters(normalized, config)) executionService.execute(workflow.getId(), TriggeredBy.EMAIL_RECEIVED, normalized);
+            enrichResumeAttachment(token, messageId, normalized);
+            if (matchesFilters(normalized, config) && isApplicationEmail(normalized)) {
+                executionService.execute(workflow.getId(), TriggeredBy.EMAIL_RECEIVED, normalized);
+            }
         }
         state.setHistoryId(nextHistoryId);
         state.setUpdatedAt(Instant.now());
@@ -96,27 +108,64 @@ public class GmailPollingScheduler {
                 .timeout(Duration.ofSeconds(30)).block());
     }
 
-    private void enrichTextAttachments(String token, String messageId, ObjectNode normalized) {
-        StringBuilder attachmentText = new StringBuilder();
-        for (JsonNode attachment : normalized.path("attachments")) {
-            String mime = attachment.path("mimeType").asText("");
-            String attachmentId = attachment.path("attachmentId").asText("");
-            if (!mime.startsWith("text/") || attachmentId.isBlank()) continue;
-            try {
-                JsonNode response = apiExecutor.execute("gmail", "get attachment", () -> webClientBuilder.build().get()
-                        .uri(BASE + "/messages/" + messageId + "/attachments/" + attachmentId)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
-                        .timeout(Duration.ofSeconds(30)).block());
-                String text = decode(response.path("data").asText(""));
-                if (!text.isBlank()) {
-                    ((ObjectNode) attachment).put("text", text);
-                    attachmentText.append("\n\n").append(text);
-                }
-            } catch (Exception e) {
-                log.debug("Unable to read text Gmail attachment {}: {}", attachment.path("filename").asText(), e.getMessage());
+    private void enrichResumeAttachment(String token, String messageId, ObjectNode normalized) {
+        JsonNode attachments = normalized.path("attachments");
+        String bestFilename = "";
+        String bestMime = "";
+        String bestAttachmentId = "";
+        int bestScore = -1;
+
+        for (JsonNode attachment : attachments) {
+            String filename = attachment.path("filename").asText("");
+            String extension = extension(filename);
+            if (!RESUME_EXTENSIONS.contains(extension)) continue;
+            String lower = filename.toLowerCase(Locale.ROOT);
+            int score = 10;
+            for (String term : RESUME_NAME_TERMS) if (lower.contains(term)) score += 10;
+            if (score > bestScore) {
+                bestScore = score;
+                bestFilename = filename;
+                bestMime = attachment.path("mimeType").asText("");
+                bestAttachmentId = attachment.path("attachmentId").asText("");
             }
         }
-        if (attachmentText.length() > 0) normalized.put("body", normalized.path("body").asText("") + attachmentText);
+
+        if (bestAttachmentId.isBlank()) return;
+
+        try {
+            JsonNode response = apiExecutor.execute("gmail", "get resume attachment", () -> webClientBuilder.build().get()
+                    .uri(BASE + "/messages/" + messageId + "/attachments/" + bestAttachmentId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                    .timeout(Duration.ofSeconds(30)).block());
+            byte[] bytes = decodeBytes(response.path("data").asText(""));
+            if (bytes.length == 0) throw new IllegalArgumentException("Resume attachment contains no data.");
+            String text = attachmentTextExtractor.extract(bestFilename, bestMime, bytes);
+            normalized.put("body", text);
+            normalized.put("attachmentName", bestFilename);
+            normalized.put("attachmentType", bestMime);
+        } catch (Exception e) {
+            normalized.put("resumeExtractionError", e.getMessage() == null ? "Unable to extract resume attachment." : e.getMessage());
+            normalized.put("body", "");
+            log.debug("Unable to extract Gmail resume attachment {}: {}", bestFilename, e.getMessage());
+        }
+    }
+
+    private boolean isApplicationEmail(JsonNode message) {
+        String subject = message.path("subject").asText("").toLowerCase(Locale.ROOT);
+        String body = message.path("body").asText("").toLowerCase(Locale.ROOT);
+        int textSignals = 0;
+        for (String term : APPLICATION_TERMS) {
+            if (subject.contains(term)) textSignals += 2;
+            else if (body.contains(term)) textSignals++;
+        }
+        boolean hasResumeAttachment = message.path("attachments").isArray() && message.path("attachments").anyMatch(this::isResumeAttachment);
+        boolean application = textSignals >= 2 || (textSignals >= 1 && hasResumeAttachment);
+        return application;
+    }
+
+    private boolean isResumeAttachment(JsonNode attachment) {
+        String filename = attachment.path("filename").asText("");
+        return RESUME_EXTENSIONS.contains(extension(filename));
     }
 
     private ObjectNode normalize(JsonNode message) {
@@ -132,6 +181,7 @@ public class GmailPollingScheduler {
         String body = extractText(message.path("payload"));
         output.put("body", body.isBlank() ? message.path("snippet").asText("") : body);
         output.set("attachments", attachmentMetadata(message.path("payload")));
+        output.put("isApplication", false);
         return output;
     }
 
@@ -183,6 +233,16 @@ public class GmailPollingScheduler {
     private String decode(String data) {
         try { return new String(Base64.getUrlDecoder().decode(data), StandardCharsets.UTF_8); }
         catch (IllegalArgumentException e) { return ""; }
+    }
+
+    private byte[] decodeBytes(String data) {
+        try { return Base64.getUrlDecoder().decode(data); }
+        catch (IllegalArgumentException e) { return new byte[0]; }
+    }
+
+    private String extension(String filename) {
+        int dot = filename == null ? -1 : filename.lastIndexOf('.');
+        return dot < 0 ? "" : filename.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
     private JsonNode findEmailTrigger(JsonNode nodes) {
