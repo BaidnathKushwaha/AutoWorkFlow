@@ -61,20 +61,14 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
         boolean headersCreated = false;
 
         if (configured != null && configured.isArray()) {
-            if (createHeaders) {
-                throw new IllegalArgumentException("Google Sheets create headers requires a named object mapping.");
-            }
+            if (createHeaders) throw new IllegalArgumentException("Google Sheets create headers requires a named object mapping.");
             JsonNode source = configured.size() == 1 && configured.get(0).isArray() ? configured.get(0) : configured;
             source.forEach(value -> row.add(resolveValue(value, ctx.getInputPayload())));
         } else if (namedMapping != null) {
             rowFields(namedMapping, row, ctx.getInputPayload());
-            if (createHeaders) {
-                headersCreated = writeHeadersIfTargetIsEmpty(token, spreadsheetId, range, namedMapping);
-            }
+            if (createHeaders) headersCreated = writeHeadersIfTargetIsEmpty(token, spreadsheetId, range, namedMapping);
         } else {
-            if (createHeaders) {
-                throw new IllegalArgumentException("Google Sheets create headers requires a named object mapping.");
-            }
+            if (createHeaders) throw new IllegalArgumentException("Google Sheets create headers requires a named object mapping.");
             row.add(ctx.getInputPayload() == null ? "" : ctx.getInputPayload().toString());
         }
 
@@ -103,8 +97,8 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
     }
 
     private boolean writeHeadersIfTargetIsEmpty(String token, String spreadsheetId, String range, ObjectNode mapping) {
-        String inspectionRange = sheetName(range);
-        JsonNode existing = apiExecutor.execute("google_sheets", "check sheet before headers", () -> webClientBuilder.build().get()
+        String inspectionRange = inspectionRange(range);
+        JsonNode existing = apiExecutor.execute("google_sheets", "check target before headers", () -> webClientBuilder.build().get()
                 .uri(valuesUri(spreadsheetId, inspectionRange))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .retrieve().bodyToMono(JsonNode.class)
@@ -237,9 +231,8 @@ public class GoogleSheetsIntegrationStrategy implements NodeStrategy {
         return UriComponentsBuilder.fromUriString(path).queryParam("valueInputOption", "USER_ENTERED").queryParam("insertDataOption", "INSERT_ROWS").build().toUri();
     }
 
-    private String sheetName(String range) {
-        int separator = range.lastIndexOf('!');
-        return separator > 0 ? range.substring(0, separator) : range;
+    private String inspectionRange(String range) {
+        return range.contains("!") ? range : range;
     }
 
     private String headerRange(String range, int columnCount) {
