@@ -26,6 +26,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.io.ByteArrayOutputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -40,6 +41,30 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class GmailPollingSchedulerTest {
+
+    @Test
+    void gmailApiUrisAreAbsoluteAndUseExpectedPathsAndQueries() {
+        GmailPollingScheduler scheduler = new GmailPollingScheduler(
+                mock(WorkflowRepository.class),
+                mock(GmailTriggerStateRepository.class),
+                mock(IntegrationService.class),
+                mock(IntegrationApiExecutor.class),
+                mock(ExecutionService.class),
+                mock(WebClient.Builder.class),
+                new ResumeAttachmentTextExtractor());
+
+        URI profile = scheduler.profileUri();
+        URI history = scheduler.historyUri("123456");
+        URI message = scheduler.messageUri("message-1");
+        URI attachment = scheduler.attachmentUri("message-1", "attachment-1");
+
+        assertGmailUri(profile, "/gmail/v1/users/me/profile");
+        assertGmailUri(history, "/gmail/v1/users/me/history");
+        assertThat(history.getQuery()).contains("startHistoryId=123456").contains("historyTypes=messageAdded");
+        assertGmailUri(message, "/gmail/v1/users/me/messages/message-1");
+        assertThat(message.getQuery()).contains("format=full");
+        assertGmailUri(attachment, "/gmail/v1/users/me/messages/message-1/attachments/attachment-1");
+    }
 
     @Test
     void newApplicationEmailDownloadsRealAttachmentExtractsBodyAndTriggersEmailExecution() throws Exception {
@@ -212,6 +237,12 @@ class GmailPollingSchedulerTest {
         scheduler.poll();
 
         verify(workflowRepository).findByStatusAndDeployedTrue(WorkflowStatus.ACTIVE);
+    }
+
+    private static void assertGmailUri(URI uri, String expectedPath) {
+        assertThat(uri.getScheme()).isEqualTo("https");
+        assertThat(uri.getHost()).isEqualTo("gmail.googleapis.com");
+        assertThat(uri.getPath()).isEqualTo(expectedPath);
     }
 
     private static Mono<ClientResponse> responseFor(
