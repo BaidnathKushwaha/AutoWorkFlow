@@ -82,8 +82,10 @@ public class GmailPollingScheduler {
         String nextHistoryId = historyResponse.path("historyId").asText(historyCursor);
         for (String messageId : messageIds) {
             ObjectNode normalized = normalize(fetchMessage(token, messageId));
-            enrichResumeAttachment(token, messageId, normalized);
-            if (matchesFilters(normalized, config) && isApplicationEmail(normalized)) {
+            boolean application = matchesFilters(normalized, config) && isApplicationEmail(normalized);
+            normalized.put("isApplication", application);
+            if (application) {
+                enrichResumeAttachment(token, messageId, normalized);
                 executionService.execute(workflow.getId(), TriggeredBy.EMAIL_RECEIVED, normalized);
             }
         }
@@ -158,14 +160,18 @@ public class GmailPollingScheduler {
             if (subject.contains(term)) textSignals += 2;
             else if (body.contains(term)) textSignals++;
         }
-        boolean hasResumeAttachment = message.path("attachments").isArray() && message.path("attachments").anyMatch(this::isResumeAttachment);
-        boolean application = textSignals >= 2 || (textSignals >= 1 && hasResumeAttachment);
-        return application;
+        boolean hasResumeAttachment = false;
+        JsonNode attachments = message.path("attachments");
+        if (attachments.isArray()) {
+            for (JsonNode attachment : attachments) {
+                if (isResumeAttachment(attachment)) { hasResumeAttachment = true; break; }
+            }
+        }
+        return textSignals >= 2 || (textSignals >= 1 && hasResumeAttachment);
     }
 
     private boolean isResumeAttachment(JsonNode attachment) {
-        String filename = attachment.path("filename").asText("");
-        return RESUME_EXTENSIONS.contains(extension(filename));
+        return RESUME_EXTENSIONS.contains(extension(attachment.path("filename").asText("")));
     }
 
     private ObjectNode normalize(JsonNode message) {
