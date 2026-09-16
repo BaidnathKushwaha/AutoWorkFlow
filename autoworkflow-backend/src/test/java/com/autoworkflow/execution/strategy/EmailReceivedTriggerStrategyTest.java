@@ -21,7 +21,8 @@ class EmailReceivedTriggerStrategyTest {
                 .put("subject", "Application for Java Backend Developer")
                 .put("body", "John Doe Java Spring Boot PostgreSQL")
                 .put("jobDescription", "Java Backend Developer with Spring Boot");
-        JsonNode config = JsonUtils.mapper().createObjectNode();
+        JsonNode config = JsonUtils.mapper().createObjectNode()
+                .put("jobDescription", "Configured description that must not overwrite incoming value");
 
         NodeExecutionResult result = strategy.execute(new NodeExecutionContext(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "gmail", "email_received", config, input));
