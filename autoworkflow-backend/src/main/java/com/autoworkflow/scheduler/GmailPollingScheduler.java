@@ -134,21 +134,24 @@ public class GmailPollingScheduler {
 
         if (bestAttachmentId.isBlank()) return;
 
+        final String attachmentId = bestAttachmentId;
+        final String filename = bestFilename;
+        final String mimeType = bestMime;
         try {
             JsonNode response = apiExecutor.execute("gmail", "get resume attachment", () -> webClientBuilder.build().get()
-                    .uri(BASE + "/messages/" + messageId + "/attachments/" + bestAttachmentId)
+                    .uri(BASE + "/messages/" + messageId + "/attachments/" + attachmentId)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
                     .timeout(Duration.ofSeconds(30)).block());
             byte[] bytes = decodeBytes(response.path("data").asText(""));
             if (bytes.length == 0) throw new IllegalArgumentException("Resume attachment contains no data.");
-            String text = attachmentTextExtractor.extract(bestFilename, bestMime, bytes);
+            String text = attachmentTextExtractor.extract(filename, mimeType, bytes);
             normalized.put("body", text);
-            normalized.put("attachmentName", bestFilename);
-            normalized.put("attachmentType", bestMime);
+            normalized.put("attachmentName", filename);
+            normalized.put("attachmentType", mimeType);
         } catch (Exception e) {
             normalized.put("resumeExtractionError", e.getMessage() == null ? "Unable to extract resume attachment." : e.getMessage());
             normalized.put("body", "");
-            log.debug("Unable to extract Gmail resume attachment {}: {}", bestFilename, e.getMessage());
+            log.debug("Unable to extract Gmail resume attachment {}: {}", filename, e.getMessage());
         }
     }
 
