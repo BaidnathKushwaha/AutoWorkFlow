@@ -52,7 +52,7 @@ class GmailPollingSchedulerTest {
                 .status(WorkflowStatus.ACTIVE)
                 .deployed(true)
                 .canvasNodes(JsonUtils.mapper().readTree("""
-                        [{"type":"email_received","data":{"subjectFilter":"Application","jobDescription":"We are hiring a Java Backend Developer. Required skills: Java, Spring Boot, REST APIs, PostgreSQL."}}]
+                        [{"type":"email_received","data":{"subjectFilter":"Application","jobDescription":"Configured Java backend job description for test"}}]
                         """))
                 .build();
 
@@ -62,10 +62,10 @@ class GmailPollingSchedulerTest {
                 .updatedAt(Instant.now())
                 .build();
 
-        byte[] resumePdf = createPdf("John Doe\nJava Backend Developer\n2 years experience\nJava\nSpring Boot\nREST APIs\nPostgreSQL");
+        byte[] resumePdf = createPdf("Test Candidate\nBackend Developer\nProfessional experience\nJava\nSpring Boot\nREST APIs\nPostgreSQL");
         String encodedResume = Base64.getUrlEncoder().withoutPadding().encodeToString(resumePdf);
         String encodedEmailBody = Base64.getUrlEncoder().withoutPadding().encodeToString(
-                "Hello, I am applying for the Java Backend Developer position. Please find my resume attached."
+                "Application received. Resume attached."
                         .getBytes(StandardCharsets.UTF_8));
 
         String historyJson = """
@@ -87,11 +87,11 @@ class GmailPollingSchedulerTest {
                     "headers":[
                       {"name":"From","value":"candidate@example.com"},
                       {"name":"To","value":"jobs@example.com"},
-                      {"name":"Subject","value":"Application for Java Backend Developer"}
+                      {"name":"Subject","value":"Application for Backend Developer"}
                     ],
                     "parts":[
                       {"mimeType":"text/plain","body":{"data":"%s"}},
-                      {"filename":"john_doe_resume.pdf","mimeType":"application/pdf","body":{"attachmentId":"attachment-1","size":%d}}
+                      {"filename":"candidate_resume.pdf","mimeType":"application/pdf","body":{"attachmentId":"attachment-1","size":%d}}
                     ]
                   }
                 }
@@ -131,15 +131,15 @@ class GmailPollingSchedulerTest {
 
         JsonNode payload = payloadCaptor.getValue();
         assertThat(payload.path("sender").asText()).isEqualTo("candidate@example.com");
-        assertThat(payload.path("subject").asText()).isEqualTo("Application for Java Backend Developer");
-        assertThat(payload.path("attachmentName").asText()).isEqualTo("john_doe_resume.pdf");
+        assertThat(payload.path("subject").asText()).isEqualTo("Application for Backend Developer");
+        assertThat(payload.path("attachmentName").asText()).isEqualTo("candidate_resume.pdf");
         assertThat(payload.path("attachmentType").asText()).isEqualTo("application/pdf");
         assertThat(payload.path("body").asText())
-                .contains("John Doe")
-                .contains("Java Backend Developer")
+                .contains("Test Candidate")
+                .contains("Backend Developer")
                 .contains("Spring Boot")
                 .contains("PostgreSQL");
-        assertThat(payload.path("body").asText()).doesNotContain("Please find my resume attached");
+        assertThat(payload.path("body").asText()).doesNotContain("Resume attached");
         assertThat(attachmentRequest.get()).isEqualTo("/gmail/v1/users/me/messages/message-1/attachments/attachment-1");
         assertThat(state.getHistoryId()).isEqualTo("200");
         verify(stateRepository).save(state);
