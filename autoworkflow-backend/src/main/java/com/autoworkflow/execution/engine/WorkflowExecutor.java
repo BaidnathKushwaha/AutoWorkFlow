@@ -25,7 +25,7 @@ public class WorkflowExecutor {
         for (JsonNode node : nodes) { String id = node.path("id").asText(); boolean validStart = incoming.getOrDefault(id, 0) == 0; if (!triggerIds.isEmpty()) validStart = validStart && triggerIds.contains(id); if (validStart) starts.add(id); }
         if (starts.isEmpty()) return ExecutionRunResult.failed(List.of(), "Workflow has no valid starting node: every node has an incoming connection.");
         JsonNode seed = triggerPayload == null ? JsonUtils.mapper().createObjectNode() : triggerPayload;
-        ScopeResult result = executeScope(userId, workflowId, executionId, nodes, edges, starts, Collections.emptyMap(), seed, null, null, null, null, null, null, Collections.emptySet());
+        ScopeResult result = executeScope(userId, workflowId, executionId, nodes, edges, starts, Collections.emptyMap(), seed, null, null, null, null, null, Collections.emptySet());
         if (!result.success()) return ExecutionRunResult.failed(result.steps(), result.error()); return ExecutionRunResult.success(result.steps(), result.finalOutput());
     }
 
@@ -47,7 +47,7 @@ public class WorkflowExecutor {
             if (!result.success()) { boolean continueOnFail = config.path("continueOnFail").asBoolean(false); if (!continueOnFail) return ScopeResult.failed(steps, "Node '" + label + "' failed: " + result.error()); log.warn("Node '{}' failed but continueOnFail=true; continuing.", label); }
             JsonNode output = result.outputPayload() == null ? input : result.outputPayload(); lastOutput[0] = output;
             if ("loop".equals(nodeType) && result.success()) { ScopeResult loopResult = executeLoop(userId, workflowId, executionId, nodes, edges, nodeId, config, output, steps, iterationIndex, iterationCount, iterationId, parentLoopNodeId, branchPath); if (!loopResult.success()) return loopResult; steps = new ArrayList<>(loopResult.steps()); lastOutput[0] = loopResult.finalOutput(); continue; }
-            for (JsonNode edge : outgoing.getOrDefault(nodeId, Collections.emptyList())) { String target = edge.path("target").asText(); String edgeBranch = edge.path("data").path("branch").asText(""); if (edgeBranch.isBlank()) edgeBranch = edge.path("sourceHandle").asText(""); String edgeHandle = edge.path("sourceHandle").asText(""); String edgeBranchForRouting = edgeBranch; boolean taken = true; String branchKey = result.branchKey(); Boolean branchTaken = result.branchTaken(); if (result.success() && branchKey != null) taken = branchKey.equals(edgeBranchForRouting); else if (result.success() && branchTaken != null && !edgeBranchForRouting.isBlank()) taken = Boolean.parseBoolean(edgeBranchForRouting) == branchTaken.booleanValue(); if (!stopBefore.contains(target)) resolver.resolve(target, taken, output); }
+            for (JsonNode edge : outgoing.getOrDefault(nodeId, Collections.emptyList())) { String target = edge.path("target").asText(); String edgeBranch = edge.path("data").path("branch").asText(""); if (edgeBranch.isBlank()) edgeBranch = edge.path("sourceHandle").asText(""); String edgeBranchForRouting = edgeBranch; boolean taken = true; String branchKey = result.branchKey(); Boolean branchTaken = result.branchTaken(); if (result.success() && branchKey != null) taken = branchKey.equals(edgeBranchForRouting); else if (result.success() && branchTaken != null && !edgeBranchForRouting.isBlank()) taken = Boolean.parseBoolean(edgeBranchForRouting) == branchTaken.booleanValue(); if (!stopBefore.contains(target)) resolver.resolve(target, taken, output); }
         }
         return ScopeResult.success(steps, lastOutput[0]);
     }
@@ -56,9 +56,6 @@ public class WorkflowExecutor {
         JsonNode itemsNode = loopOutput.path("items"); if (!itemsNode.isArray()) return ScopeResult.failed(accumulated, "Loop node did not produce an array of items.");
         String bodyStart = config.path("bodyStartNodeId").asText("").trim();
         String continuation = config.path("continuationNodeId").asText("").trim();
-
-        // Phase 5 UI exposes two explicit Loop source handles. Prefer their connected
-        // target IDs so users do not have to type internal node IDs into ConfigPanel.
         for (JsonNode edge : edges) {
             if (!loopNodeId.equals(edge.path("source").asText())) continue;
             String handle = edge.path("sourceHandle").asText(edge.path("data").path("branch").asText(""));
@@ -67,10 +64,17 @@ public class WorkflowExecutor {
             if ("loop_body".equals(handle) && bodyStart.isBlank()) bodyStart = target;
             if ("loop_continuation".equals(handle) && continuation.isBlank()) continuation = target;
         }
-
         if (itemsNode.size() > 0 && (bodyStart.isEmpty() || continuation.isEmpty())) return ScopeResult.failed(accumulated, "Loop requires a connected LOOP body and AFTER continuation when executing a non-empty collection.");
-        if (!bodyStart.isEmpty() && nodes.stream().noneMatch(n -> bodyStart.equals(n.path("id").asText()))) return ScopeResult.failed(accumulated, "Loop bodyStartNodeId '" + bodyStart + "' does not exist.");
-        if (!continuation.isEmpty() && nodes.stream().noneMatch(n -> continuation.equals(n.path("id").asText()))) return ScopeResult.failed(accumulated, "Loop continuationNodeId '" + continuation + "' does not exist.");
+        if (!bodyStart.isEmpty()) {
+            boolean exists = false;
+            for (JsonNode n : nodes) { if (bodyStart.equals(n.path("id").asText())) { exists = true; break; } }
+            if (!exists) return ScopeResult.failed(accumulated, "Loop bodyStartNodeId '" + bodyStart + "' does not exist.");
+        }
+        if (!continuation.isEmpty()) {
+            boolean exists = false;
+            for (JsonNode n : nodes) { if (continuation.equals(n.path("id").asText())) { exists = true; break; } }
+            if (!exists) return ScopeResult.failed(accumulated, "Loop continuationNodeId '" + continuation + "' does not exist.");
+        }
         ArrayNode results = JsonUtils.mapper().createArrayNode();
         for (int i = 0; i < itemsNode.size(); i++) { JsonNode item = itemsNode.get(i); ObjectNode iterationInput = JsonUtils.mapper().createObjectNode(); iterationInput.set("item", item.deepCopy()); iterationInput.put("index", i); iterationInput.put("count", itemsNode.size()); String iterationId = executionId + ":" + loopNodeId + ":" + i; String scopedBranch = appendBranch(outerBranchPath, "loop[" + i + "]"); ScopeResult body = executeScope(userId, workflowId, executionId, nodes, edges, Collections.singletonList(bodyStart), Collections.emptyMap(), iterationInput, i, itemsNode.size(), iterationId, loopNodeId, scopedBranch, Collections.singleton(continuation)); accumulated = new ArrayList<>(accumulated); accumulated.addAll(body.steps()); if (!body.success()) return ScopeResult.failed(accumulated, body.error()); JsonNode bodyOutput = body.finalOutput() == null ? JsonUtils.mapper().nullNode() : body.finalOutput(); results.add(bodyOutput); }
         ObjectNode collected = JsonUtils.mapper().createObjectNode(); collected.set("items", itemsNode.deepCopy()); collected.put("count", itemsNode.size()); collected.set("results", results);
