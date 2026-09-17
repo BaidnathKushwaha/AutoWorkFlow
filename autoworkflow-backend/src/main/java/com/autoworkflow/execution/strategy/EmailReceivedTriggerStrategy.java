@@ -27,7 +27,7 @@ public class EmailReceivedTriggerStrategy implements NodeStrategy {
         ObjectNode output = input != null && input.isObject()
                 ? (ObjectNode) input.deepCopy()
                 : com.autoworkflow.util.JsonUtils.mapper().createObjectNode();
-        if (!config.path("jobDescription").asText("").isBlank()) {
+        if (output.path("jobDescription").asText("").isBlank() && !config.path("jobDescription").asText("").isBlank()) {
             output.put("jobDescription", config.path("jobDescription").asText());
         }
         return NodeExecutionResult.ok(output);

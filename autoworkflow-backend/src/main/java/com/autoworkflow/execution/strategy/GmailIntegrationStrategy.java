@@ -13,10 +13,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,7 +29,7 @@ import java.util.regex.Pattern;
 public class GmailIntegrationStrategy implements NodeStrategy {
 
     private static final String BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
-    private static final Pattern TEMPLATE = Pattern.compile("\\{\\{\\s*([^}]+?)\\s*}}" );
+    private static final Pattern TEMPLATE = Pattern.compile("\\{\\{\\s*([^}]+?)\\s*}}");
 
     private final WebClient.Builder webClientBuilder;
     private final IntegrationService integrationService;
@@ -64,7 +67,7 @@ public class GmailIntegrationStrategy implements NodeStrategy {
 
         JsonNode response = apiExecutor.execute("gmail", "send message", () ->
                 webClientBuilder.build().post()
-                        .uri(BASE + "/messages/send")
+                        .uri(URI.create(BASE + "/messages/send"))
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .bodyValue(java.util.Map.of("raw", encoded))
                         .retrieve().bodyToMono(JsonNode.class)
@@ -79,14 +82,17 @@ public class GmailIntegrationStrategy implements NodeStrategy {
     private NodeExecutionResult read(NodeExecutionContext ctx, String token, String action) {
         JsonNode config = ctx.getNodeConfig();
         int maxResults = Math.max(1, Math.min(config.path("maxResults").asInt(10), 100));
-        String query = action.equals("search") ? config.path("query").asText("") : "";
+        String query = action.equals("search") ? config.path("query").asText("").trim() : "";
+
+        URI listUri = UriComponentsBuilder.fromHttpUrl(BASE + "/messages")
+                .queryParam("maxResults", maxResults)
+                .queryParamIfPresent("q", query.isBlank() ? Optional.empty() : Optional.of(query))
+                .build()
+                .encode()
+                .toUri();
 
         JsonNode list = apiExecutor.execute("gmail", "list messages", () ->
-                webClientBuilder.build().get().uri(uriBuilder -> uriBuilder
-                                .path(BASE + "/messages")
-                                .queryParam("maxResults", maxResults)
-                                .queryParamIfPresent("q", query.isBlank() ? java.util.Optional.empty() : java.util.Optional.of(query))
-                                .build())
+                webClientBuilder.build().get().uri(listUri)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .retrieve().bodyToMono(JsonNode.class)
                         .timeout(Duration.ofSeconds(30)).block());
@@ -95,8 +101,14 @@ public class GmailIntegrationStrategy implements NodeStrategy {
         list.path("messages").forEach(summary -> {
             String id = summary.path("id").asText();
             if (id.isBlank()) return;
+            URI messageUri = UriComponentsBuilder.fromHttpUrl(BASE + "/messages")
+                    .pathSegment(id)
+                    .queryParam("format", "full")
+                    .build()
+                    .encode()
+                    .toUri();
             JsonNode message = apiExecutor.execute("gmail", "get message", () ->
-                    webClientBuilder.build().get().uri(BASE + "/messages/" + id + "?format=full")
+                    webClientBuilder.build().get().uri(messageUri)
                             .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                             .retrieve().bodyToMono(JsonNode.class)
                             .timeout(Duration.ofSeconds(30)).block());
