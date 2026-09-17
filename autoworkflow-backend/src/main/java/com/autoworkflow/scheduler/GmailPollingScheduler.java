@@ -1,6 +1,7 @@
 package com.autoworkflow.scheduler;
 
 import com.autoworkflow.common.enums.TriggeredBy;
+import com.autoworkflow.common.exception.IntegrationApiException;
 import com.autoworkflow.execution.ExecutionService;
 import com.autoworkflow.integration.IntegrationService;
 import com.autoworkflow.integration.http.IntegrationApiExecutor;
@@ -70,10 +71,16 @@ public class GmailPollingScheduler {
         }
 
         String historyCursor = state.getHistoryId();
-        JsonNode historyResponse = apiExecutor.execute("gmail", "read history", () -> webClientBuilder.build().get()
-                .uri(historyUri(historyCursor))
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
-                .timeout(Duration.ofSeconds(30)).block());
+        JsonNode historyResponse;
+        try {
+            historyResponse = readHistory(token, historyCursor);
+        } catch (IntegrationApiException e) {
+            if (isExpiredHistoryCursor(e)) {
+                recoverHistoryCursor(workflow, state, token);
+                return;
+            }
+            throw e;
+        }
 
         Set<String> messageIds = new LinkedHashSet<>();
         historyResponse.path("history").forEach(h -> h.path("messagesAdded").forEach(added -> {
@@ -95,6 +102,28 @@ public class GmailPollingScheduler {
         state.setHistoryId(nextHistoryId);
         state.setUpdatedAt(Instant.now());
         stateRepository.save(state);
+    }
+
+    private JsonNode readHistory(String token, String historyCursor) {
+        return apiExecutor.execute("gmail", "read history", () -> webClientBuilder.build().get()
+                .uri(historyUri(historyCursor))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().bodyToMono(JsonNode.class)
+                .timeout(Duration.ofSeconds(30)).block());
+    }
+
+    private boolean isExpiredHistoryCursor(IntegrationApiException e) {
+        return "gmail".equalsIgnoreCase(e.getProvider())
+                && "read history".equalsIgnoreCase(e.getOperation())
+                && Integer.valueOf(404).equals(e.getHttpStatus());
+    }
+
+    private void recoverHistoryCursor(Workflow workflow, GmailTriggerState state, String token) {
+        String freshHistoryId = currentHistoryId(token);
+        state.setHistoryId(freshHistoryId);
+        state.setUpdatedAt(Instant.now());
+        stateRepository.save(state);
+        log.warn("Gmail history cursor expired for workflow {}. Reset cursor to the current mailbox history ID; new messages will be picked up from the next poll.",
+                workflow.getId());
     }
 
     private String currentHistoryId(String token) {
