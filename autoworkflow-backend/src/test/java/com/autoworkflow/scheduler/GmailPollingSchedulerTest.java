@@ -2,6 +2,7 @@ package com.autoworkflow.scheduler;
 
 import com.autoworkflow.common.enums.TriggeredBy;
 import com.autoworkflow.common.enums.WorkflowStatus;
+import com.autoworkflow.common.exception.IntegrationApiException;
 import com.autoworkflow.execution.ExecutionService;
 import com.autoworkflow.integration.IntegrationService;
 import com.autoworkflow.integration.http.IntegrationApiExecutor;
@@ -168,6 +169,65 @@ class GmailPollingSchedulerTest {
         assertThat(attachmentRequest.get()).isEqualTo("/gmail/v1/users/me/messages/message-1/attachments/attachment-1");
         assertThat(state.getHistoryId()).isEqualTo("200");
         verify(stateRepository).save(state);
+    }
+
+    @Test
+    void expiredHistoryCursorIsResetToCurrentProfileCursorWithoutReplayingOldMail() throws Exception {
+        UUID workflowId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Workflow workflow = Workflow.builder()
+                .id(workflowId)
+                .userId(userId)
+                .name("Resume Matcher")
+                .status(WorkflowStatus.ACTIVE)
+                .deployed(true)
+                .canvasNodes(JsonUtils.mapper().readTree("[{\"type\":\"email_received\",\"data\":{}}]"))
+                .build();
+        GmailTriggerState state = GmailTriggerState.builder()
+                .workflowId(workflowId)
+                .historyId("expired-history-id")
+                .updatedAt(Instant.now())
+                .build();
+
+        WorkflowRepository workflowRepository = mock(WorkflowRepository.class);
+        GmailTriggerStateRepository stateRepository = mock(GmailTriggerStateRepository.class);
+        IntegrationService integrationService = mock(IntegrationService.class);
+        IntegrationApiExecutor apiExecutor = mock(IntegrationApiExecutor.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        WebClient.Builder webClientBuilder = WebClient.builder().exchangeFunction(request -> {
+            assertThat(request.url().getPath()).isEqualTo("/gmail/v1/users/me/profile");
+            return Mono.just(jsonResponse("{\"historyId\":\"fresh-history-id\"}"));
+        });
+
+        when(workflowRepository.findByStatusAndDeployedTrue(WorkflowStatus.ACTIVE)).thenReturn(List.of(workflow));
+        when(stateRepository.findByWorkflowId(workflowId)).thenReturn(Optional.of(state));
+        when(integrationService.getDecryptedAccessToken(userId, "gmail")).thenReturn("test-gmail-access-token");
+        when(apiExecutor.<JsonNode>execute(anyString(), anyString(), any(Supplier.class)))
+                .thenAnswer(invocation -> {
+                    String operation = invocation.getArgument(1);
+                    if ("read history".equals(operation)) {
+                        throw IntegrationApiException.http("gmail", "read history", 404,
+                                "gmail request failed (HTTP 404).", false, new RuntimeException("history expired"));
+                    }
+                    return ((Supplier<JsonNode>) invocation.getArgument(2)).get();
+                });
+
+        GmailPollingScheduler scheduler = new GmailPollingScheduler(
+                workflowRepository,
+                stateRepository,
+                integrationService,
+                apiExecutor,
+                executionService,
+                webClientBuilder,
+                new ResumeAttachmentTextExtractor());
+
+        scheduler.poll();
+
+        assertThat(state.getHistoryId()).isEqualTo("fresh-history-id");
+        verify(stateRepository).save(state);
+        verifyNoInteractions(executionService);
+        verify(apiExecutor).execute(eq("gmail"), eq("read history"), any(Supplier.class));
+        verify(apiExecutor).execute(eq("gmail"), eq("read profile"), any(Supplier.class));
     }
 
     @Test
