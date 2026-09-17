@@ -101,5 +101,4 @@ export const nodeConfigs = {
   merge: { fields: [{ key: 'mode', label: 'Merge Mode', type: 'select', options: ['append', 'object'] }] },
   delay: { fields: [{ key: 'duration', label: 'Duration (seconds)', type: 'number', default: 1 }] },
   transform: { fields: [{ key: 'mapping', label: 'Field Mapping (JSON)', type: 'textarea', placeholder: '{"name":"{{user.name}}"}' }] },
-  ai_router: { fields: [{ key: 'provider', label: 'AI Provider', type: 'select', options: AI_PROVIDERS, default: 'gemini' }, { key: 'model', label: 'Model Name', type: 'select', optionsFrom: 'provider', default: 'gemini-3.6-flash' }, { key: 'branches', label: 'Branches', type: 'tags', placeholder: 'urgent, normal' }, { key: 'continueOnFail', label: 'Continue workflow if this node fails', type: 'checkbox', default: false }] },
 }
