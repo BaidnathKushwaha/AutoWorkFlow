@@ -11,8 +11,8 @@ import com.autoworkflow.workflow.WorkflowRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,7 +31,6 @@ import java.util.Locale;
 import java.util.Set;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class GmailPollingScheduler {
     private static final String BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -49,6 +48,23 @@ public class GmailPollingScheduler {
     private final ExecutionService executionService;
     private final WebClient.Builder webClientBuilder;
     private final ResumeAttachmentTextExtractor attachmentTextExtractor;
+
+    public GmailPollingScheduler(
+            WorkflowRepository workflowRepository,
+            GmailTriggerStateRepository stateRepository,
+            IntegrationService integrationService,
+            IntegrationApiExecutor apiExecutor,
+            ExecutionService executionService,
+            @Qualifier("gmailWebClientBuilder") WebClient.Builder webClientBuilder,
+            ResumeAttachmentTextExtractor attachmentTextExtractor) {
+        this.workflowRepository = workflowRepository;
+        this.stateRepository = stateRepository;
+        this.integrationService = integrationService;
+        this.apiExecutor = apiExecutor;
+        this.executionService = executionService;
+        this.webClientBuilder = webClientBuilder;
+        this.attachmentTextExtractor = attachmentTextExtractor;
+    }
 
     @Scheduled(fixedDelay = 30000)
     @Async("workflowExecutorPool")
