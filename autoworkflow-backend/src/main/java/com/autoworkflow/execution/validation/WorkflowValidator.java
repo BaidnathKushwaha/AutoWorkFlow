@@ -89,10 +89,11 @@ public class WorkflowValidator {
         if ("loop".equalsIgnoreCase(type)) {
             String array = data.path("arrayField").asText("items").trim(), body = data.path("bodyStartNodeId").asText("").trim(), continuation = data.path("continuationNodeId").asText("").trim();
             if (array.isBlank()) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) requires arrayField.");
-            if (body.isBlank() || continuation.isBlank()) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) requires bodyStartNodeId and continuationNodeId.");
-            if (body.equals(continuation)) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) cannot use the same node for body and continuation.");
-            if (!ids.contains(body)) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) bodyStartNodeId '" + body + "' does not exist.");
-            if (!ids.contains(continuation)) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) continuationNodeId '" + continuation + "' does not exist.");
+            // bodyStartNodeId and continuationNodeId are optional persisted hints.
+            // When the Loop uses its explicit Phase 5 handles, the graph edges are the
+            // source of truth and validateAdvancedControlFlow resolves the IDs there.
+            if (!body.isBlank() && !ids.contains(body)) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) bodyStartNodeId '" + body + "' does not exist.");
+            if (!continuation.isBlank() && !ids.contains(continuation)) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) continuationNodeId '" + continuation + "' does not exist.");
         }
         if ("switch".equalsIgnoreCase(type)) {
             JsonNode cases = data.path("cases"); String def = data.path("defaultCase").asText("").trim();
@@ -109,10 +110,24 @@ public class WorkflowValidator {
             String id = entry.getKey(), type = entry.getValue(); JsonNode data = byId.get(id).path("data"); List<JsonNode> outs = outgoing.getOrDefault(id, List.of());
             if ("loop".equals(type)) {
                 String body = data.path("bodyStartNodeId").asText("").trim(), continuation = data.path("continuationNodeId").asText("").trim();
-                long bodyEdges = outs.stream().filter(e -> body.equals(e.path("target").asText()) && ("body".equals(e.path("data").path("loopRole").asText()) || "body".equals(e.path("data").path("branch").asText()))).count();
-                long continuationEdges = outs.stream().filter(e -> continuation.equals(e.path("target").asText()) && ("continuation".equals(e.path("data").path("loopRole").asText()) || "continuation".equals(e.path("data").path("branch").asText()))).count();
-                if (bodyEdges != 1) return WorkflowValidationResult.invalid("Loop node '" + id + "' must have exactly one body edge to bodyStartNodeId.");
-                if (continuationEdges != 1) return WorkflowValidationResult.invalid("Loop node '" + id + "' must have exactly one continuation edge to continuationNodeId.");
+                List<JsonNode> bodyHandleEdges = new ArrayList<>(), continuationHandleEdges = new ArrayList<>();
+                for (JsonNode edge : outs) {
+                    String sourceHandle = edge.path("sourceHandle").asText("").trim();
+                    String branch = edge.path("data").path("branch").asText("").trim();
+                    String loopRole = edge.path("data").path("loopRole").asText("").trim();
+                    String handle = sourceHandle.isBlank() ? branch : sourceHandle;
+                    if ("loop_body".equals(handle) || "body".equals(loopRole)) bodyHandleEdges.add(edge);
+                    if ("loop_continuation".equals(handle) || "continuation".equals(loopRole)) continuationHandleEdges.add(edge);
+                }
+                if (bodyHandleEdges.size() != 1) return WorkflowValidationResult.invalid("Loop node '" + id + "' must have exactly one LOOP body edge.");
+                if (continuationHandleEdges.size() != 1) return WorkflowValidationResult.invalid("Loop node '" + id + "' must have exactly one AFTER continuation edge.");
+                String inferredBody = bodyHandleEdges.get(0).path("target").asText("").trim();
+                String inferredContinuation = continuationHandleEdges.get(0).path("target").asText("").trim();
+                if (body.isBlank()) body = inferredBody;
+                if (continuation.isBlank()) continuation = inferredContinuation;
+                if (!body.equals(inferredBody)) return WorkflowValidationResult.invalid("Loop node '" + id + "' bodyStartNodeId does not match its LOOP body edge.");
+                if (!continuation.equals(inferredContinuation)) return WorkflowValidationResult.invalid("Loop node '" + id + "' continuationNodeId does not match its AFTER continuation edge.");
+                if (body.equals(continuation)) return WorkflowValidationResult.invalid("Node '" + id + "' (Loop) cannot use the same node for body and continuation.");
                 Set<String> bodyNodes = new HashSet<>(); Deque<String> q = new ArrayDeque<>(); q.add(body);
                 while (!q.isEmpty()) {
                     String current = q.removeFirst(); if (!bodyNodes.add(current)) continue;
