@@ -1,747 +1,221 @@
 # AutoWorkflow
 
-> **An AI assisted visual workflow automation platform for building, testing, and executing intelligent workflows.**
+**AI-assisted visual workflow automation built with React, React Flow, Spring Boot, and PostgreSQL.**
 
-AutoWorkflow is a full stack workflow automation platform built around a visual canvas. Users can compose workflows by connecting triggers, AI powered nodes, logic nodes, and integrations, then manually test or deploy those workflows for event driven execution.
+AutoWorkflow is a full-stack application for building workflows visually, configuring AI and integration nodes, and executing connected steps through a backend workflow engine. It separates workflow editing and manual testing from deployment and event-triggered execution.
 
-The project is intentionally designed to go beyond a basic drag and drop automation clone by combining **visual workflow orchestration, AI processing, intelligent routing, standalone node testing, and execution visibility**.
+> **Project status:** Development is paused at the current committed baseline while documentation and handover notes are finalized. New features are intentionally deferred. This is a project snapshot, not a claim that every provider, integration, or deployment path is production-ready.
 
----
-
-## ✨ Current Highlights
-
-- 🎨 Visual workflow builder powered by React Flow
-- 🤖 AI powered workflow nodes
-- 🧠 AI completion and summarization capabilities
-- 🔀 Conditional Switch based workflow branching
-- 🧪 Standalone manual execution without requiring a trigger
-- 🚀 Trigger based deployment with strict deployment validation
-- 🔗 Webhook based workflow triggering
-- 🐙 GitHub webhook/event integration
-- 📊 Execution history and execution console
-- ⚡ Real time execution state feedback
-- 🧩 Modular node strategy based backend execution engine
-- 🔐 Authentication and protected workflow operations
-- 🗄️ Persistent workflow and execution data
-- 📦 PostgreSQL based persistence
-- 🌐 OpenAI, Gemini, and OpenRouter provider support
-- 🛡️ Workflow validation before deployment
-- 🔄 Automatic invalidation of deployed workflows when their graph changes
+[Repository](https://github.com/BaidnathKushwaha/AutoWorkFlow) · [Architecture](docs/ARCHITECTURE.md) · [Local setup](docs/LOCAL_SETUP.md) · [Project status](docs/PROJECT_STATUS.md) · [Verification checklist](docs/VERIFICATION_CHECKLIST.md)
 
 ---
 
-# 🧠 What Problem Does AutoWorkflow Solve?
+## Contents
 
-Traditional automation platforms generally require users to manually understand which trigger, action, and integration should be connected.
+- [What it does](#what-it-does)
+- [Core capabilities in the repository](#core-capabilities-in-the-repository)
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Repository layout](#repository-layout)
+- [Run locally](#run-locally)
+- [Configuration and secrets](#configuration-and-secrets)
+- [Verification](#verification)
+- [Current limitations](#current-limitations)
+- [Resuming development](#resuming-development)
 
-AutoWorkflow aims to make intelligent automation more approachable by combining:
+## What it does
 
-```text
-Visual Workflow
-      +
-AI Processing
-      +
-Conditional Routing
-      +
-External Integrations
-      +
-Execution Visibility
-```
+The application lets a user arrange nodes on a visual canvas, connect them into a graph, save the workflow, and run it through the backend. The backend resolves each node to a dedicated strategy and passes outputs through the graph. AI nodes can process text, while logic nodes can control which path is executed.
 
-A workflow can therefore look like:
-
-```text
-Trigger
-   ↓
-AI Processing
-   ↓
-Switch / Logic
-   ├── Condition A → Action
-   ├── Condition B → Action
-   └── Default     → Action
-```
-
-The goal is to let users focus on **what should happen**, rather than implementing the orchestration logic themselves.
-
----
-
-# 🏗️ High Level Architecture
+The intended model is:
 
 ```text
-                    ┌─────────────────────┐
-                    │      Frontend       │
-                    │ React + React Flow  │
-                    └──────────┬──────────┘
-                               │
-                         REST / HTTP
-                               │
-                               ▼
-                    ┌─────────────────────┐
-                    │       Backend       │
-                    │    Spring Boot      │
-                    └──────────┬──────────┘
-                               │
-             ┌─────────────────┼─────────────────┐
-             │                 │                 │
-             ▼                 ▼                 ▼
-       Workflow Engine    AI Provider Layer   Integrations
-             │                 │                 │
-             │          ┌──────┼──────┐          │
-             │          │      │      │          │
-             │        OpenAI Gemini OpenRouter    │
-             │                                     
-             ▼
-       Node Strategy Registry
-             │
-       ┌─────┼──────────────┐
-       ▼     ▼              ▼
-    Trigger  AI           Logic
-                       / Switch / Router
-             │
-             ▼
-       Execution Engine
-             │
-             ▼
-          Database
-```
-
----
-
-# 🎨 Visual Workflow Builder
-
-The frontend provides a visual canvas where nodes can be dragged, configured, connected, and executed.
-
-### Current node categories include
-
-- Triggers
-- AI nodes
-- Logic nodes
-- Integration/action nodes
-- Output related nodes
-
-New nodes are created in a compact state to keep larger workflows readable.
-
----
-
-# 🤖 AI Capabilities
-
-AutoWorkflow uses an application-wide AI provider infrastructure rather than coupling
-AI consumers to a single vendor.
-
-The shared AI layer is:
-
-```text
-AI Consumer
-     ↓
-  AiService
-     ↓
-AiProviderRouter
-     ↓
-┌──────────────┬──────────┬─────────┐
-▼              ▼          ▼
-OpenRouter     Gemini     OpenAI
-
-This allows AI based nodes to use the provider layer without changing the workflow execution architecture.
-
-### Current AI use cases
-
-#### Summarization
-
-```text
-Input Text
-    ↓
-Summarizer
-    ↓
-AI generated summary
-```
-
-#### AI Completion
-
-```text
-Input
-   ↓
-AI Completion
-   ↓
-Generated response
-```
-
-AI output can also become the input for downstream logic.
-
----
-
-# 🔀 Intelligent Switch / Branching
-
-One of the major capabilities currently implemented is the **Switch node**.
-
-The Switch allows workflow execution to branch based on the value produced by an earlier node.
-
-Example:
-
-```text
-                 AI Matcher
-                     │
-                     ▼
-                  SWITCH
-              ┌──────┼──────┐
-              │      │      │
-            Strong Moderate Weak
-              │      │      │
-              ▼      ▼      ▼
-            Action Action Action
-```
-
-### Example: JD Resume Matcher
-
-An AI node could classify a candidate:
-
-```json
-{
-  "match": "Strong"
-}
-```
-
-The Switch can then route the workflow:
-
-```text
-Strong    → Google Sheets
-Moderate  → Google Sheets
-Weak      → Gmail
-```
-
-The Switch supports:
-
-- Multiple named cases
-- Default branch
-- Dynamic output handles
-- Duplicate case protection
-- Branch specific edge metadata
-- Backend branch execution
-- Execution of only the selected branch
-
-### Execution model
-
-```text
-Switch
-   ↓
-branchKey = "Strong"
-   ↓
-WorkflowExecutor
-   ↓
-edge.data.branch == "Strong"
-   ↓
-Strong branch executes
-```
-
-This keeps routing deterministic rather than asking an LLM to decide which execution path to follow.
-
----
-
-# 🧪 Manual Execution vs Deployment
-
-A key architectural decision in AutoWorkflow is separating **testing** from **deployment**.
-
-## Manual Run
-
-Manual execution is designed for testing individual workflows or nodes.
-
-A trigger is **not required**.
-
-```text
-Manual Run
-    ↓
-Trigger not required
-    ↓
-Execute workflow
-```
-
-This makes it possible to test something such as:
-
-```text
-Summarizer
-```
-
-without first creating a Webhook or Schedule trigger.
-
----
-
-## Deployment
-
-Deployment is intentionally stricter.
-
-A workflow must contain a valid trigger before it can become active.
-
-```text
-Deploy
-  ↓
-Deployment validation
-  ↓
-Trigger required
-  ↓
-ACTIVE
-```
-
-This prevents an event driven production workflow from being deployed without a mechanism capable of starting it.
-
-The frontend also disables deployment for triggerless workflows, while the backend remains the final authority.
-
----
-
-# 🔄 Workflow Deployment Invalidation
-
-A deployed workflow should not silently continue using an old graph after its nodes or connections have been modified.
-
-Therefore, changes to:
-
-- Canvas nodes
-- Canvas edges
-- Trigger type
-
-invalidate the existing deployment.
-
-The workflow is returned to:
-
-```text
-DRAFT
-```
-
-and must be deployed again.
-
-```text
-ACTIVE
-  │
-  │ graph / trigger modified
-  ▼
-DRAFT
-  │
-  │ Deploy
-  ▼
-ACTIVE
-```
-
-This prevents accidental execution of an outdated workflow version.
-
----
-
-# ⚡ Execution Experience
-
-The workflow builder provides immediate execution feedback.
-
-When the user starts a manual execution:
-
-```text
-▶ Run
-   ↓
-⏳ Running...
-   ↓
-Execution completes
-   ↓
-▶ Run
-```
-
-The Run action is disabled while execution is in progress, reducing accidental duplicate executions.
-
-Execution results are displayed through the execution console and execution history.
-
----
-
-# 🧾 Execution History
-
-Execution history is persisted rather than being treated as temporary frontend state.
-
-This allows users to inspect previous executions while the current UI avoids displaying stale execution results as if they belonged to a new run.
-
-The architecture separates:
-
-```text
-Current execution
-       +
-Historical executions
-```
-
-so previous executions remain available without contaminating a new execution state.
-
----
-
-# 🔗 Webhook & Event Driven Workflows
-
-AutoWorkflow supports trigger based execution for deployed workflows.
-
-Examples include:
-
-- Webhook
-- GitHub events
-- Other configured trigger types
-
-A typical flow:
-
-```text
-External Event
+Input / Trigger
       ↓
-Webhook / GitHub Event
+AI or Transformation
       ↓
-Workflow
+Condition / Branch / Loop
       ↓
-AI / Logic / Actions
+Integration or Action
       ↓
-Execution Result
+Execution result and logs
 ```
 
-GitHub webhook integration is currently implemented and tested as part of the workflow system.
+The goal is to make orchestration visible and configurable, while keeping execution decisions and validation in the backend rather than relying entirely on frontend behavior.
 
----
+## Core capabilities in the repository
 
-# 🧩 Backend Execution Architecture
+The following capabilities are represented in the current `main` branch. Actual runtime behavior depends on configuration, credentials, provider availability, and the specific workflow.
 
-The backend uses a strategy based execution model.
+- **Visual workflow editor:** React and React Flow canvas with connected nodes and edges.
+- **Workflow lifecycle:** workflow persistence, manual execution, deployment, and trigger-based execution paths.
+- **Execution engine:** Spring Boot backend with a node strategy registry and graph-oriented execution.
+- **AI provider layer:** OpenAI, Google Gemini, and OpenRouter configuration/routing.
+- **AI operations:** summarization, completion/classification-related nodes, and AI-assisted workflow functionality.
+- **Control flow:** IF/condition, Switch/AI routing, Loop, Merge, and Transform-related implementations. See the source and project status notes for current scope.
+- **External integrations:** GitHub events/webhooks, Slack, Gmail, and Google Sheets integration code, plus other node strategies in the backend.
+- **Authentication and protected operations:** Spring Security and JWT-based authentication.
+- **Persistence:** PostgreSQL, with Flyway migrations and JSONB-backed workflow canvas data.
+- **Execution visibility:** execution history/logging and UI execution-state feedback.
+- **API exploration:** Springdoc OpenAPI/Swagger UI configuration.
 
-Conceptually:
+This list describes repository implementation, not a guarantee that every integration has valid credentials or has been recently re-tested end to end.
+
+## Architecture
 
 ```text
-WorkflowExecutor
-      ↓
-NodeStrategyRegistry
-      ↓
-NodeStrategy
-      ↓
-Execute node
+React + React Flow frontend
+        │ REST/HTTP
+        ▼
+Spring Boot API
+        ├── Authentication and authorization
+        ├── Workflow CRUD and lifecycle
+        ├── Workflow validation
+        ├── Execution service
+        │      └── WorkflowExecutor
+        │              └── NodeStrategyRegistry
+        │                      └── Node-specific strategies
+        ├── AI provider routing
+        ├── Integration / OAuth services
+        └── Execution and workflow persistence
+                        │
+                        ▼
+                   PostgreSQL
 ```
 
-This keeps individual node behaviors isolated.
+Workflow node and edge data is stored as graph-shaped JSON. The executor uses node strategies to isolate node behavior and keep graph orchestration separate from individual integrations.
 
-For example:
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design overview and lifecycle distinctions.
 
-```text
-SwitchStrategy
-SummarizerStrategy
-AiRouterStrategy
-IfConditionStrategy
-...
-```
+## Technology stack
 
-The executor is responsible for orchestration while individual strategies handle node specific behavior.
+| Area | Technology |
+|---|---|
+| Frontend | React 19, Vite, JavaScript |
+| Workflow canvas | `@xyflow/react` |
+| UI styling | Tailwind CSS |
+| Client state / requests | Zustand, Axios |
+| Backend | Java 21, Spring Boot 3 |
+| API and persistence | Spring Web, Spring Data JPA, Hibernate |
+| Security | Spring Security, JWT |
+| Database / migrations | PostgreSQL, Flyway, JSONB |
+| AI providers | OpenAI, Google Gemini, OpenRouter |
+| API documentation | Springdoc OpenAPI |
+| Scheduling / cache-related components | Quartz; Redis node support is configuration-dependent |
+| Testing tools | JUnit / Spring Boot Test, Vitest, Testing Library |
 
-This architecture makes adding new node types significantly easier than putting every node implementation into one large execution class.
-
----
-
-# 🔐 Validation Architecture
-
-Workflow validation is intentionally split into two modes.
-
-### Execution validation
-
-Used for manual execution.
+## Repository layout
 
 ```text
-validateForExecution()
-```
-
-A trigger is not required.
-
-### Deployment validation
-
-Used before deployment.
-
-```text
-validateForDeployment()
-```
-
-A trigger is required.
-
-This distinction prevents the deployment rules from unnecessarily blocking standalone testing.
-
----
-
-# 🛠️ Technology Stack
-
-## Frontend
-
-- React
-- Vite
-- React Flow
-- Tailwind CSS
-- JavaScript
-
-## Backend
-
-- Java
-- Spring Boot
-- Maven
-- Spring Web
-- Spring Data JPA
-- Hibernate
-
-## Security
-
-- Spring Security
-- JWT based authentication
-
-## Database
-
-- PostgreSQL
-
-## AI
-
-- OpenAI
-- Google Gemini
-- OpenRouter
-
-## Workflow Execution
-
-- Strategy pattern
-- Node strategy registry
-- Graph based execution
-- Branch aware execution
-
-## Development & Integration
-
-- Git
-- GitHub
-- Webhooks
-- REST APIs
-
----
-
-# 📁 Project Structure
-
-The project follows a separated frontend/backend architecture.
-
-```text
-AutoWorkflow/
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   ├── store/
-│   │   └── ...
-│   └── package.json
-│
-├── backend/
-│   ├── src/
-│   │   ├── main/
-│   │   │   └── java/
-│   │   │       └── com.autoworkflow/
-│   │   │           ├── execution/
-│   │   │           ├── workflow/
-│   │   │           ├── common/
-│   │   │           └── ...
-│   │   └── test/
-│   └── pom.xml
-│
+AutoWorkFlow/
+├── frontend/                       # React/Vite client
+├── autoworkflow-backend/           # Spring Boot API and workflow engine
+│   ├── src/main/java/com/autoworkflow/
+│   ├── src/main/resources/
+│   │   ├── application.example.yml
+│   │   └── db/migration/
+│   ├── src/test/
+│   ├── pom.xml
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── docker-compose.yml              # Root-level PostgreSQL service
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── LOCAL_SETUP.md
+│   ├── PROJECT_STATUS.md
+│   └── VERIFICATION_CHECKLIST.md
 └── README.md
 ```
 
----
+## Run locally
 
-# 🚀 Core Workflow Lifecycle
+The steps below are the development path. Detailed configuration notes and caveats are in [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
-```text
-Create Workflow
-      ↓
-Build graph
-      ↓
-Configure nodes
-      ↓
-Save
-      ↓
-Manual Run
-      ↓
-Inspect execution
-      ↓
-Add trigger
-      ↓
-Deploy
-      ↓
-External event
-      ↓
-Workflow execution
-      ↓
-Execution history
-```
+### 1. Start PostgreSQL
 
----
-
-# 🧪 Example Workflow
-
-### AI Classification Workflow
-
-```text
-             ┌──────────────┐
-             │   Webhook    │
-             └──────┬───────┘
-                    │
-                    ▼
-             ┌──────────────┐
-             │ AI Completion│
-             └──────┬───────┘
-                    │
-                    ▼
-             ┌──────────────┐
-             │    Switch    │
-             └──────┬───────┘
-               ┌────┼────┐
-               │    │    │
-               ▼    ▼    ▼
-            Strong Moderate Weak
-               │    │    │
-               ▼    ▼    ▼
-             Action Action Action
-```
-
-This demonstrates the core idea of AutoWorkflow:
-
-> **AI determines the information. Logic determines the path. Actions perform the work.**
-
----
-
-# 📌 Current Development Status
-
-### Completed
-
-- [x] Visual workflow builder
-- [x] Drag and drop node creation
-- [x] Compact initial node layout
-- [x] Workflow persistence
-- [x] Manual workflow execution
-- [x] Trigger based deployment
-- [x] Deployment validation
-- [x] Deployment invalidation after graph changes
-- [x] Execution console
-- [x] Execution history
-- [x] Immediate Running state
-- [x] AI provider abstraction
-- [x] OpenAI integration
-- [x] Gemini integration
-- [x] OpenRouter integration
-- [x] Summarization workflow
-- [x] AI Completion capability
-- [x] GitHub webhook integration
-- [x] Switch node
-- [x] Multi branch execution
-- [x] Default Switch branch
-- [x] Branch aware execution engine
-
-### In Progress / Future
-
-- [ ] Additional integrations
-- [ ] More advanced AI driven workflow construction
-- [ ] Richer condition operators
-- [ ] Nested branching
-- [ ] Workflow templates
-- [ ] Improved workflow observability
-- [ ] Production deployment infrastructure
-- [ ] More comprehensive automated integration testing
-
----
-
-# 🎯 Design Principles
-
-AutoWorkflow is being developed around a few core principles.
-
-### 1. Testing should be independent from deployment
-
-A developer should be able to test a node or workflow without first configuring a production trigger.
-
-### 2. Production workflows must be validated strictly
-
-A deployed workflow must have a valid trigger.
-
-### 3. AI and deterministic logic should remain separate
-
-AI should generate or classify information.
-
-Deterministic nodes such as Switch should control execution.
-
-### 4. The execution engine should be extensible
-
-Adding a new node should primarily involve implementing its strategy rather than rewriting the entire executor.
-
-### 5. The UI should expose execution state clearly
-
-Users should always understand whether a workflow is idle, running, completed, or failed.
-
-### 6. Graph modifications should invalidate deployment
-
-A changed workflow should not silently execute an outdated deployed version.
-
----
-
-# 📈 Project Direction
-
-The long term direction is to evolve AutoWorkflow from a traditional visual automation builder into an **AI assisted workflow orchestration platform**.
-
-The intended experience is:
-
-```text
-User Intent
-     ↓
-AI understands the task
-     ↓
-Workflow constructed / assisted
-     ↓
-User reviews the workflow
-     ↓
-AI + deterministic nodes execute it
-     ↓
-Results + execution history
-```
-
-The platform is therefore not intended to simply reproduce existing automation tools. The focus is on combining **AI understanding with controllable, observable, deterministic workflow execution**.
-
----
-
-# 👨‍💻 Development
-
-Clone the repository and configure the frontend and backend according to the environment configuration files.
-
-Typical development flow:
+From the repository root:
 
 ```bash
-# Backend
-cd backend
-./mvnw spring-boot:run
+docker compose up -d postgres
+```
 
-# Frontend
+The root Compose file creates a local PostgreSQL database. Its credentials are development-only and must not be reused for a public or production deployment.
+
+### 2. Start the backend
+
+```bash
+cd autoworkflow-backend
+./mvnw spring-boot:run
+```
+
+Configure the required environment variables and OAuth/AI provider credentials before expecting protected or external-service functionality to work. See the backend's `application.example.yml` and [Local setup](docs/LOCAL_SETUP.md).
+
+### 3. Start the frontend
+
+In a separate terminal:
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Production frontend build:
+By default, the frontend API base URL is `http://localhost:8080`. Override it with `VITE_API_URL` when your backend uses a different URL.
+
+### Docker option
+
+A backend Compose file also exists at `autoworkflow-backend/docker-compose.yml`. Review its environment values before using it. The supplied fallback secrets and database credentials are for local development only, not production.
+
+## Configuration and secrets
+
+The backend example configuration references environment variables for database access, JWT signing, encryption, AI provider keys, and OAuth credentials. Common variables include:
+
+- Database: `DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- Security: `JWT_SECRET`, `ENCRYPTION_SECRET`
+- AI providers: `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`
+- OAuth: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`
+- Frontend / webhooks: `FRONTEND_URL`, `VITE_API_URL`, `VITE_WEBHOOK_BASE_URL`
+
+Use the exact names and profile-specific requirements in the checked-in example configuration and the relevant integration setup. Do not commit real credentials, access tokens, production secrets, or populated `.env` files.
+
+## Verification
+
+Commands available in the repository:
 
 ```bash
+# Frontend
+cd frontend
+npm test
+npm run lint
 npm run build
-```
 
-Backend tests:
-
-```bash
+# Backend, from repository root
+cd autoworkflow-backend
 ./mvnw test
+./mvnw clean package
 ```
 
-> Exact environment variables and service configuration depend on the current deployment setup and should be kept outside the repository when they contain secrets.
+These are instructions to run the checks, not a statement that they have all passed against the current commit. Before calling this snapshot release-ready, run the [verification checklist](docs/VERIFICATION_CHECKLIST.md), including OAuth and live-provider checks that cannot be proven by compilation alone.
 
----
+## Current limitations
 
-# 🔒 Security
+- AI calls require valid provider keys, supported model identifiers, and available quota. A configured provider does not mean every model is currently available.
+- OAuth-backed integrations require correctly configured client credentials, redirect URIs, scopes, and user authorization.
+- Public webhook providers such as GitHub cannot call a local-only `localhost` endpoint. Use a controlled public HTTPS endpoint for external webhook testing.
+- The root Compose file contains development credentials. Do not expose it as a production deployment configuration.
+- A checked-in example configuration is provided, but local environment configuration may be intentionally absent from version control.
+- Automated tests and live end-to-end integrations must be re-run on the current baseline before making a release-readiness claim.
 
-Never commit:
+## Resuming development
 
-- API keys
-- JWT secrets
-- Database passwords
-- OAuth credentials
-- Webhook secrets
-- `.env` files containing sensitive values
+This project is being paused at the current baseline. No new feature is required to close this milestone.
 
-Use environment variables or the project's configuration mechanism for secrets.
+When development resumes:
 
----
+1. Pull the latest `main` branch and inspect the recent commit history.
+2. Read [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) and [docs/VERIFICATION_CHECKLIST.md](docs/VERIFICATION_CHECKLIST.md).
+3. Run the frontend and backend checks before changing code.
+4. Re-test critical workflows and provider credentials.
+5. Add new features only after the baseline is understood and verified.
 
-# 📜 Project Status
-
-AutoWorkflow is an actively developed project.
-
-The current implementation focuses on establishing a reliable workflow execution foundation before expanding into more advanced AI assisted automation capabilities.
+For now, the priority is to preserve a clear, honest record of what is in the repository and what still needs verification.
