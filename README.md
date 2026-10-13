@@ -97,7 +97,11 @@ The detailed reference is organized under [`docs/`](docs/README.md):
 - [Entity relationships](docs/ENTITY_RELATIONSHIPS.md): foreign keys, ownership, and delete behavior.
 - [Workflow JSONB format](docs/JSONB_WORKFLOW_FORMAT.md): canvas nodes, edges, branch routing, loop data, and execution logs.
 - [Workflow execution engine](docs/WORKFLOW_EXECUTION_ENGINE.md): executor, strategies, context, result, and lifecycle.
+- [Node system](docs/NODE_SYSTEM.md): node definitions, strategy registry, and extension workflow.
+- [AI provider system](docs/AI_PROVIDER_SYSTEM.md): provider selection, fallback, and failure handling.
+- [Integrations and OAuth](docs/INTEGRATIONS_OAUTH.md): credentials, OAuth state, webhooks, and Gmail trigger state.
 - [API reference](docs/API_REFERENCE.md): controller route inventory and authentication notes.
+- [Testing and troubleshooting](docs/TESTING_TROUBLESHOOTING.md): baseline checks and debugging.
 - [Local setup](docs/LOCAL_SETUP.md), [project status](docs/PROJECT_STATUS.md), and [verification checklist](docs/VERIFICATION_CHECKLIST.md).
 
 ## Technology stack
@@ -140,7 +144,11 @@ AutoWorkFlow/
 │   ├── ENTITY_RELATIONSHIPS.md
 │   ├── JSONB_WORKFLOW_FORMAT.md
 │   ├── WORKFLOW_EXECUTION_ENGINE.md
+│   ├── NODE_SYSTEM.md
+│   ├── AI_PROVIDER_SYSTEM.md
+│   ├── INTEGRATIONS_OAUTH.md
 │   ├── API_REFERENCE.md
+│   ├── TESTING_TROUBLESHOOTING.md
 │   ├── LOCAL_SETUP.md
 │   ├── PROJECT_STATUS.md
 │   └── VERIFICATION_CHECKLIST.md
