@@ -6,7 +6,7 @@ AutoWorkflow is a full-stack application for building workflows visually, config
 
 > **Project status:** Development is paused at the current committed baseline while documentation and handover notes are finalized. New features are intentionally deferred. This is a project snapshot, not a claim that every provider, integration, or deployment path is production-ready.
 
-[Repository](https://github.com/BaidnathKushwaha/AutoWorkFlow) · [Architecture](docs/ARCHITECTURE.md) · [Local setup](docs/LOCAL_SETUP.md) · [Project status](docs/PROJECT_STATUS.md) · [Verification checklist](docs/VERIFICATION_CHECKLIST.md)
+[Repository](https://github.com/BaidnathKushwaha/AutoWorkFlow) · [Documentation index](docs/README.md) · [Architecture](docs/ARCHITECTURE.md) · [Local setup](docs/LOCAL_SETUP.md) · [Project status](docs/PROJECT_STATUS.md) · [Verification checklist](docs/VERIFICATION_CHECKLIST.md)
 
 ---
 
@@ -15,6 +15,7 @@ AutoWorkflow is a full-stack application for building workflows visually, config
 - [What it does](#what-it-does)
 - [Core capabilities in the repository](#core-capabilities-in-the-repository)
 - [Architecture](#architecture)
+- [Technical documentation](#technical-documentation)
 - [Technology stack](#technology-stack)
 - [Repository layout](#repository-layout)
 - [Run locally](#run-locally)
@@ -87,6 +88,18 @@ Workflow node and edge data is stored as graph-shaped JSON. The executor uses no
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design overview and lifecycle distinctions.
 
+## Technical documentation
+
+The detailed reference is organized under [`docs/`](docs/README.md):
+
+- [Data model](docs/DATA_MODEL.md): JPA entities, fields, and model notes.
+- [Database schema](docs/DATABASE_SCHEMA.md): PostgreSQL tables, constraints, indexes, and Flyway migrations.
+- [Entity relationships](docs/ENTITY_RELATIONSHIPS.md): foreign keys, ownership, and delete behavior.
+- [Workflow JSONB format](docs/JSONB_WORKFLOW_FORMAT.md): canvas nodes, edges, branch routing, loop data, and execution logs.
+- [Workflow execution engine](docs/WORKFLOW_EXECUTION_ENGINE.md): executor, strategies, context, result, and lifecycle.
+- [API reference](docs/API_REFERENCE.md): controller route inventory and authentication notes.
+- [Local setup](docs/LOCAL_SETUP.md), [project status](docs/PROJECT_STATUS.md), and [verification checklist](docs/VERIFICATION_CHECKLIST.md).
+
 ## Technology stack
 
 | Area | Technology |
@@ -120,7 +133,14 @@ AutoWorkFlow/
 │   └── docker-compose.yml
 ├── docker-compose.yml              # Root-level PostgreSQL service
 ├── docs/
+│   ├── README.md
 │   ├── ARCHITECTURE.md
+│   ├── DATA_MODEL.md
+│   ├── DATABASE_SCHEMA.md
+│   ├── ENTITY_RELATIONSHIPS.md
+│   ├── JSONB_WORKFLOW_FORMAT.md
+│   ├── WORKFLOW_EXECUTION_ENGINE.md
+│   ├── API_REFERENCE.md
 │   ├── LOCAL_SETUP.md
 │   ├── PROJECT_STATUS.md
 │   └── VERIFICATION_CHECKLIST.md
