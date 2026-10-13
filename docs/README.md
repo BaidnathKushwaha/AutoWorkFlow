@@ -25,7 +25,11 @@ This directory contains implementation-oriented documentation for the repository
 | Document | What it covers |
 |---|---|
 | [Workflow execution engine](WORKFLOW_EXECUTION_ENGINE.md) | Execution service, graph traversal, strategies, failures, control flow |
+| [Node system](NODE_SYSTEM.md) | Node definitions, strategy registry, context/result contract, adding nodes |
+| [AI provider system](AI_PROVIDER_SYSTEM.md) | Provider abstraction, AUTO fallback, preferences, failures |
+| [Integrations and OAuth](INTEGRATIONS_OAUTH.md) | Token persistence, OAuth state, webhooks, Gmail trigger cursor |
 | [API reference](API_REFERENCE.md) | Controller route inventory, request behavior, authentication notes |
+| [Testing and troubleshooting](TESTING_TROUBLESHOOTING.md) | Automated commands, smoke tests, common failure investigation |
 
 ## Keeping documentation accurate
 
